@@ -147,6 +147,21 @@ requirements.txt, .env.example, .gitignore
 
 **Done when:** the JSON has a lineup and the top 5 pickups, each with a reason and a confidence.
 
+**Status: done 2026-11-20 (engine 1.0).** The code is in `pipeline/engine/`, with tests in `pipeline/tests/` that run in the workflow before each build.
+- **Projection:**
+  - The blend is ESPN 0.35, season 0.35, last 15 days 0.30. When ESPN has no projection (most free agents), the season average takes ESPN's weight.
+  - Adjustments: minutes trend (last 7 vs. season, ±7.5% max), +4% per injured high-usage teammate (max +8%), and −5% on the second night of a back-to-back.
+  - Availability by status: DAY_TO_DAY 0.65, OUT 0 this week, and OUT 0.6 for the rest of the season, since ESPN gives no return dates.
+- **Lineups:** an exact DP for each remaining day.
+  - Players whose game has started stay locked.
+  - Ties keep players in their current slots, so no pointless moves get suggested.
+  - Each "start" is paired with the player currently in that slot, matching ESPN's swaps.
+- **Pickups:** the top 30 free agents are tried against Kevin's 5 weakest players.
+  - Score = this week's lineup gain + rest-of-season gain ÷ weeks left.
+  - Respects the add lock (`meta.adds_effective_date`), the one-day waiver delay and the 4-center limit.
+  - Never drops a player who projects higher per game. Without this rule it suggested dropping an injured Stephen Curry.
+- **Known limits:** the weights are hand-set until Phase 4 measures accuracy. The 5 pickups often share the same drop; they're alternatives, since only 1 add is allowed per day.
+
 ## Phase 3: Dashboard on Vercel
 
 1. Kevin provides Figma designs. Until then, build functional, unstyled views.
