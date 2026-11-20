@@ -1,0 +1,117 @@
+/* Functional, deliberately plain styles. The real visual design comes from Figma. */
+
+:root {
+  --bg: #ffffff;
+  --fg: #171717;
+  --muted: #6b6b6b;
+  --line: #e2e2e2;
+  --soft: #f6f6f6;
+  --accent: #1f5fd1;
+  --warn-bg: #fff6db;
+  --warn-fg: #6b4b00;
+  --error-bg: #fde8e8;
+  --error-fg: #8a1c1c;
+  --high: #1d7a3a;
+  --medium: #8a6100;
+  --low: #a12b2b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111111;
+    --fg: #ececec;
+    --muted: #9a9a9a;
+    --line: #2c2c2c;
+    --soft: #1a1a1a;
+    --accent: #7aa7ff;
+    --warn-bg: #3a2f0b;
+    --warn-fg: #f3d58a;
+    --error-bg: #3d1414;
+    --error-fg: #f5b3b3;
+    --high: #6fd38f;
+    --medium: #e7c463;
+    --low: #f08c8c;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+a { color: var(--accent); }
+h1 { font-size: 1.4rem; margin: 0 0 0.25rem; }
+h2 { font-size: 1.05rem; margin: 2rem 0 0.5rem; }
+p { margin: 0.25rem 0 0.75rem; }
+.muted { color: var(--muted); }
+.num { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+
+.header {
+  border-bottom: 1px solid var(--line);
+  padding: 0.75rem 16px 0;
+  max-width: 1040px;
+  margin: 0 auto;
+}
+.nav { display: flex; gap: 1rem; flex-wrap: wrap; margin: 0.5rem 0; }
+.nav a { text-decoration: none; padding: 0.25rem 0; border-bottom: 2px solid transparent; }
+.nav a[aria-current="page"] { color: var(--fg); border-bottom-color: var(--fg); font-weight: 600; }
+
+.modebar { padding: 0.5rem 0 0.75rem; }
+.modebar-row { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+.toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.toggle button {
+  border: 0; background: transparent; color: var(--fg); padding: 0.3rem 0.8rem; font: inherit; cursor: pointer;
+}
+.toggle button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+.toggle button:disabled { color: var(--muted); cursor: not-allowed; }
+.updated { font-size: 0.9rem; }
+
+.replay {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 0.75rem; align-items: center;
+  margin-top: 0.5rem; padding: 0.5rem 0.75rem; background: var(--soft); border-radius: 6px;
+}
+.replay button, .button {
+  border: 1px solid var(--line); background: var(--bg); color: var(--fg); border-radius: 6px;
+  padding: 0.25rem 0.6rem; font: inherit; cursor: pointer;
+}
+.replay button:disabled { color: var(--muted); cursor: not-allowed; }
+
+.banner { padding: 0.5rem 0.75rem; border-radius: 6px; margin: 0.5rem 0; }
+.banner-warn { background: var(--warn-bg); color: var(--warn-fg); }
+.banner-error { background: var(--error-bg); color: var(--error-fg); }
+.banner-info { background: var(--soft); }
+
+.main { max-width: 1040px; margin: 0 auto; padding: 1rem 16px 3rem; }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; margin: 1rem 0; }
+.card { border: 1px solid var(--line); border-radius: 8px; padding: 0.75rem; }
+.card .label { color: var(--muted); font-size: 0.85rem; }
+.card .value { font-size: 1.5rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.table-wrap { overflow-x: auto; margin: 0.5rem 0; }
+table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+th, td { text-align: left; padding: 0.45rem 0.5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; }
+tr.dim td { color: var(--muted); }
+
+.list { list-style: none; padding: 0; margin: 0.5rem 0; }
+.list > li { border: 1px solid var(--line); border-radius: 8px; padding: 0.6rem 0.75rem; margin-bottom: 0.5rem; }
+.list .title { font-weight: 600; }
+
+.why { font-size: 0.88rem; }
+.conf { font-size: 0.8rem; font-weight: 600; text-transform: capitalize; }
+.conf .muted { font-weight: 400; text-transform: none; }
+.conf-high { color: var(--high); }
+.conf-medium { color: var(--medium); }
+.conf-low { color: var(--low); }
+.injury { color: var(--low); font-size: 0.85rem; }
+.tag { font-size: 0.75rem; border: 1px solid var(--line); border-radius: 4px; padding: 0 0.3rem; color: var(--muted); }
+.empty { padding: 0.5rem 0; }
+
+details { margin: 0.5rem 0; }
+summary { cursor: pointer; font-weight: 600; }
+select { font: inherit; padding: 0.2rem 0.4rem; }
