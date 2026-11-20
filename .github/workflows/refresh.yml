@@ -1,0 +1,70 @@
+# Fetch the ESPN league → run the engine → commit data/latest.json and a snapshot.
+# Needs repo secrets ESPN_S2 and SWID (Settings → Secrets and variables → Actions).
+# A failed run (e.g. expired cookies) leaves data/ untouched; GitHub emails you about it.
+name: Refresh data
+
+on:
+  schedule:
+    # UTC. ET = UTC−5 in winter (UTC−4 from March). GitHub may start runs a few minutes late.
+    - cron: "0 7 * * *"    # ~2am ET: last night's final scores
+    - cron: "0 14 * * *"   # ~9am ET: morning injury news
+    - cron: "30 18 * * *"  # ~1:30pm ET: before weekend afternoon games
+    - cron: "30 22 * * *"  # ~5:30pm ET: before most 7pm tip-offs
+  workflow_dispatch:
+    inputs:
+      check_only:
+        description: "Only check that ESPN answers from GitHub (writes nothing)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Check ESPN is reachable
+        if: ${{ inputs.check_only }}
+        working-directory: pipeline
+        env:
+          ESPN_S2: ${{ secrets.ESPN_S2 }}
+          SWID: ${{ secrets.SWID }}
+        run: python build_data.py --check
+
+      - name: Build data
+        if: ${{ !inputs.check_only }}
+        working-directory: pipeline
+        env:
+          ESPN_S2: ${{ secrets.ESPN_S2 }}
+          SWID: ${{ secrets.SWID }}
+          ANONYMIZE: "true"
+        run: python build_data.py
+
+      - name: Commit data if it changed
+        if: ${{ !inputs.check_only }}
+        run: |
+          git add data/
+          if git diff --cached --quiet; then
+            echo "No data changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Refresh data $(TZ=America/New_York date '+%Y-%m-%d %H:%M ET')"
+          git pull --rebase --autostash
+          git push

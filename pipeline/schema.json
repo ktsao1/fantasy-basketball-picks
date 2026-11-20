@@ -1,0 +1,242 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "fantasy-basketball-picks/latest.json",
+  "title": "Fantasy basketball pipeline output",
+  "type": "object",
+  "required": ["meta", "teams", "my_team", "opponent", "matchup", "players", "recommendations"],
+  "additionalProperties": false,
+  "$defs": {
+    "nullableNumber": { "type": ["number", "null"] },
+    "confidence": {
+      "type": "object",
+      "required": ["level", "basis"],
+      "additionalProperties": false,
+      "properties": {
+        "level": { "enum": ["high", "medium", "low"] },
+        "basis": { "type": "string", "minLength": 1 }
+      }
+    },
+    "statLine": {
+      "type": "object",
+      "required": ["fpts_avg", "fpts_total", "gp", "mpg", "avg"],
+      "additionalProperties": false,
+      "properties": {
+        "fpts_avg": { "$ref": "#/$defs/nullableNumber" },
+        "fpts_total": { "$ref": "#/$defs/nullableNumber" },
+        "gp": { "$ref": "#/$defs/nullableNumber" },
+        "mpg": { "$ref": "#/$defs/nullableNumber" },
+        "avg": { "type": "object", "additionalProperties": { "type": "number" } }
+      }
+    },
+    "rosterEntry": {
+      "type": "object",
+      "required": ["player_id", "lineup_slot"],
+      "additionalProperties": false,
+      "properties": {
+        "player_id": { "type": "integer" },
+        "lineup_slot": { "type": ["string", "null"] }
+      }
+    },
+    "team": {
+      "type": "object",
+      "required": ["team_id", "name", "abbrev", "wins", "losses", "ties", "points_for", "standing", "roster"],
+      "additionalProperties": false,
+      "properties": {
+        "team_id": { "type": "integer" },
+        "name": { "type": "string" },
+        "abbrev": { "type": "string" },
+        "wins": { "type": "integer" },
+        "losses": { "type": "integer" },
+        "ties": { "type": "integer" },
+        "points_for": { "type": "number" },
+        "standing": { "type": ["integer", "null"] },
+        "roster": { "type": "array", "items": { "$ref": "#/$defs/rosterEntry" } }
+      }
+    },
+    "teamSummary": {
+      "type": "object",
+      "required": ["team_id", "name", "abbrev", "wins", "losses", "ties", "points_for", "standing", "is_mine"],
+      "additionalProperties": false,
+      "properties": {
+        "team_id": { "type": "integer" },
+        "name": { "type": "string" },
+        "abbrev": { "type": "string" },
+        "wins": { "type": "integer" },
+        "losses": { "type": "integer" },
+        "ties": { "type": "integer" },
+        "points_for": { "type": "number" },
+        "standing": { "type": ["integer", "null"] },
+        "is_mine": { "type": "boolean" }
+      }
+    },
+    "lineupSlot": {
+      "type": "object",
+      "required": ["slot", "player_id", "reason", "confidence"],
+      "additionalProperties": false,
+      "properties": {
+        "date": { "type": "string", "format": "date" },
+        "slot": { "type": "string" },
+        "player_id": { "type": ["integer", "null"] },
+        "projected_fpts": { "$ref": "#/$defs/nullableNumber" },
+        "reason": { "type": "string", "minLength": 1 },
+        "confidence": { "$ref": "#/$defs/confidence" }
+      }
+    },
+    "change": {
+      "type": "object",
+      "required": ["action", "player_id", "reason", "confidence"],
+      "additionalProperties": false,
+      "properties": {
+        "action": { "enum": ["start", "bench", "move"] },
+        "player_id": { "type": "integer" },
+        "from_slot": { "type": ["string", "null"] },
+        "to_slot": { "type": ["string", "null"] },
+        "reason": { "type": "string", "minLength": 1 },
+        "confidence": { "$ref": "#/$defs/confidence" }
+      }
+    },
+    "pickup": {
+      "type": "object",
+      "required": ["add_player_id", "drop_player_id", "gain_this_week", "gain_rest_of_season", "reason", "confidence"],
+      "additionalProperties": false,
+      "properties": {
+        "add_player_id": { "type": "integer" },
+        "drop_player_id": { "type": ["integer", "null"] },
+        "gain_this_week": { "type": "number" },
+        "gain_rest_of_season": { "type": "number" },
+        "reason": { "type": "string", "minLength": 1 },
+        "confidence": { "$ref": "#/$defs/confidence" }
+      }
+    }
+  },
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": [
+        "schema_version", "updated_at", "season", "scoring_type", "scoring_items",
+        "roster_slots", "position_limits", "lineup_lock", "matchup_period",
+        "matchup_days", "scoring_period", "today", "anonymized", "free_agent_count"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": { "const": 1 },
+        "updated_at": { "type": "string", "format": "date-time" },
+        "season": { "type": "integer" },
+        "scoring_type": { "type": "string" },
+        "scoring_items": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["stat", "points", "lower_is_better"],
+            "additionalProperties": false,
+            "properties": {
+              "stat": { "type": "string" },
+              "points": { "type": ["number", "null"] },
+              "lower_is_better": { "type": "boolean" }
+            }
+          }
+        },
+        "roster_slots": { "type": "object", "minProperties": 1, "additionalProperties": { "type": "integer" } },
+        "position_limits": { "type": "object", "additionalProperties": { "type": "integer" } },
+        "lineup_lock": { "type": ["string", "null"] },
+        "matchup_period": { "type": "integer" },
+        "matchup_days": { "type": "array", "items": { "type": "string", "format": "date" } },
+        "scoring_period": { "type": "integer" },
+        "today": { "type": "string", "format": "date" },
+        "anonymized": { "type": "boolean" },
+        "free_agent_count": { "type": "integer" }
+      }
+    },
+    "teams": { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/teamSummary" } },
+    "my_team": { "$ref": "#/$defs/team" },
+    "opponent": { "oneOf": [{ "$ref": "#/$defs/team" }, { "type": "null" }] },
+    "matchup": {
+      "type": "object",
+      "required": ["matchup_period", "is_bye", "my_score", "opponent_score", "projected"],
+      "additionalProperties": false,
+      "properties": {
+        "matchup_period": { "type": "integer" },
+        "is_bye": { "type": "boolean" },
+        "my_score": { "$ref": "#/$defs/nullableNumber" },
+        "opponent_score": { "$ref": "#/$defs/nullableNumber" },
+        "projected": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["mine", "opponent"],
+              "additionalProperties": false,
+              "properties": { "mine": { "type": "number" }, "opponent": { "$ref": "#/$defs/nullableNumber" } }
+            }
+          ]
+        }
+      }
+    },
+    "players": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id", "name", "nba_team", "positions", "injury_status", "owner",
+          "free_agent_rank", "stats", "projection", "games_left_this_week", "game_dates_left"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "nba_team": { "type": "string" },
+          "positions": { "type": "array", "items": { "type": "string" } },
+          "injury_status": { "type": ["string", "null"] },
+          "expected_return": { "type": ["string", "null"] },
+          "owner": { "description": "team_id, or null for a free agent", "type": ["integer", "null"] },
+          "free_agent_rank": { "type": ["integer", "null"] },
+          "stats": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "season": { "$ref": "#/$defs/statLine" },
+              "last_7": { "$ref": "#/$defs/statLine" },
+              "last_15": { "$ref": "#/$defs/statLine" },
+              "last_30": { "$ref": "#/$defs/statLine" }
+            }
+          },
+          "projection": {
+            "type": "object",
+            "required": ["espn"],
+            "additionalProperties": false,
+            "properties": {
+              "espn": { "oneOf": [{ "$ref": "#/$defs/statLine" }, { "type": "null" }] },
+              "engine_fpts_per_game": { "$ref": "#/$defs/nullableNumber" }
+            }
+          },
+          "games_left_this_week": { "type": "integer", "minimum": 0 },
+          "game_dates_left": { "type": "array", "items": { "type": "string", "format": "date" } }
+        }
+      }
+    },
+    "recommendations": {
+      "type": "object",
+      "required": ["engine_version", "lineup", "changes", "pickups", "matchup_projection"],
+      "additionalProperties": false,
+      "properties": {
+        "engine_version": { "type": "string" },
+        "lineup": { "type": "array", "items": { "$ref": "#/$defs/lineupSlot" } },
+        "changes": { "type": "array", "items": { "$ref": "#/$defs/change" } },
+        "pickups": { "type": "array", "items": { "$ref": "#/$defs/pickup" } },
+        "matchup_projection": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["mine", "opponent"],
+              "additionalProperties": false,
+              "properties": { "mine": { "type": "number" }, "opponent": { "$ref": "#/$defs/nullableNumber" } }
+            }
+          ]
+        }
+      }
+    }
+  }
+}
