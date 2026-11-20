@@ -46,6 +46,11 @@ jobs:
           SWID: ${{ secrets.SWID }}
         run: python build_data.py --check
 
+      - name: Test the engine
+        if: ${{ !inputs.check_only }}
+        working-directory: pipeline
+        run: python -m unittest discover -s tests
+
       - name: Build data
         if: ${{ !inputs.check_only }}
         working-directory: pipeline

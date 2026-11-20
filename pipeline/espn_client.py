@@ -9,6 +9,7 @@ Cookies come from .env at the repo root (ESPN_S2, SWID). They are never logged.
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -177,6 +178,28 @@ def free_agents(league: League, size: int = 25, position: str | None = None):
         raise ReconnectNeeded(str(e)) from None
 
 
+def free_agents_with_status(league: League, size: int) -> list[tuple[Any, str]]:
+    """Top free agents by % owned, each with ESPN's status: FREEAGENT (add now) or WAIVERS (claim, 24h)."""
+    from espn_api.basketball.player import Player
+
+    filters = {
+        "players": {
+            "filterStatus": {"value": ["FREEAGENT", "WAIVERS"]},
+            "limit": size,
+            "sortPercOwned": {"sortPriority": 1, "sortAsc": False},
+            "sortDraftRanks": {"sortPriority": 100, "sortAsc": True, "value": "STANDARD"},
+        }
+    }
+    try:
+        data = league.espn_request.league_get(
+            params={"view": "kona_player_info", "scoringPeriodId": league.scoringPeriodId},
+            headers={"x-fantasy-filter": json.dumps(filters)},
+        )
+    except ESPNAccessDenied as e:
+        raise ReconnectNeeded(str(e)) from None
+    return [(Player(raw, league.year), raw.get("status") or "FREEAGENT") for raw in data.get("players", [])]
+
+
 # ---------------------------------------------------------------------------
 # Snapshot: everything Phase 1 stores, as plain dicts (no espn_api objects leak out,
 # so the storage layer doesn't depend on this library or on ESPN).
@@ -332,10 +355,9 @@ def fetch_snapshot(config: Config | None = None, free_agent_pool: int = FREE_AGE
             for r in _stat_rows(p, season):
                 stats[(r["player_id"], r["split"])] = r
 
-    fa = free_agents(league, size=free_agent_pool)
     free_agent_rows = []
-    for rank, p in enumerate(fa, start=1):
-        free_agent_rows.append({"player_id": p.playerId, "rank": rank})
+    for rank, (p, status) in enumerate(free_agents_with_status(league, free_agent_pool), start=1):
+        free_agent_rows.append({"player_id": p.playerId, "rank": rank, "status": status})
         players.setdefault(p.playerId, _player_row(p))
         for r in _stat_rows(p, season):
             stats.setdefault((r["player_id"], r["split"]), r)

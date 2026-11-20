@@ -17,7 +17,7 @@ import json
 import os
 import string
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -85,16 +85,42 @@ def build(snap: dict[str, Any], anonymize: bool, now: datetime) -> dict[str, Any
     now_iso = now.isoformat()
     dates_left: dict[str, list[str]] = {}
     day_dates: dict[int, str] = {}
+    today = now.astimezone(espn.ET).date()
+    today_iso = today.isoformat()
+    team_dates: dict[str, set[str]] = {}       # every game date, for back-to-back detection
+    season_left: dict[str, int] = {}           # games not yet started, rest of season
+    locked_today: set[str] = set()             # teams whose game today has tipped off
+    first_tip_today: str | None = None
     for g in snap["pro_games"]:
+        started = g["start_utc"] <= now_iso
+        for team in (g["home_team"], g["away_team"]):
+            team_dates.setdefault(team, set()).add(g["game_date"])
+            if not started:
+                season_left[team] = season_left.get(team, 0) + 1
+            elif g["game_date"] == today_iso:
+                locked_today.add(team)
+        if g["game_date"] == today_iso and not g["time_tbd"]:
+            first_tip_today = min(first_tip_today or g["start_utc"], g["start_utc"])
         if g["scoring_period"] in week_days:
             day_dates.setdefault(g["scoring_period"], g["game_date"])
-            if g["start_utc"] > now_iso:
+            if not started:
                 for team in (g["home_team"], g["away_team"]):
                     dates_left.setdefault(team, []).append(g["game_date"])
+
+    def back_to_backs(team: str) -> list[str]:
+        played = team_dates.get(team, set())
+        return sorted(
+            d for d in dates_left.get(team, [])
+            if (datetime.fromisoformat(d) - timedelta(days=1)).date().isoformat() in played
+        )
+
+    # Adds lock at the day's first game, so a pickup made after it counts from tomorrow.
+    adds_from = today if first_tip_today is None or now_iso < first_tip_today else today + timedelta(days=1)
 
     # Players: everyone rostered + the top free agents.
     owner = {r["player_id"]: r["team_id"] for r in snap["rosters"]}
     fa_rank = {f["player_id"]: f["rank"] for f in snap["free_agents"] if f["rank"] <= OUTPUT_FREE_AGENTS}
+    fa_status = {f["player_id"]: f.get("status", "FREEAGENT") for f in snap["free_agents"]}
     keep = set(owner) | set(fa_rank)
     stats: dict[int, dict[str, Any]] = {}
     for s in snap["player_stats"]:
@@ -111,11 +137,13 @@ def build(snap: dict[str, Any], anonymize: bool, now: datetime) -> dict[str, Any
                 "id": pid,
                 "name": p["name"],
                 "nba_team": p["pro_team"],
+                "primary_position": p["position"],
                 "positions": p["eligible_slots"],
                 "injury_status": p["injury_status"],
                 "expected_return": p["expected_return"],
                 "owner": owner.get(pid),
                 "free_agent_rank": fa_rank.get(pid),
+                "free_agent_status": fa_status.get(pid) if pid in fa_rank else None,
                 "stats": {name: _stat_line(ps[split]) for split, name in SPLIT_NAMES.items() if split in ps},
                 "projection": {
                     "espn": _stat_line(ps["projected"]) if "projected" in ps else None,
@@ -123,6 +151,9 @@ def build(snap: dict[str, Any], anonymize: bool, now: datetime) -> dict[str, Any
                 },
                 "games_left_this_week": len(dates_left.get(p["pro_team"], [])),
                 "game_dates_left": sorted(dates_left.get(p["pro_team"], [])),
+                "back_to_back_dates": back_to_backs(p["pro_team"]),
+                "game_today_locked": p["pro_team"] in locked_today,
+                "games_left_season": season_left.get(p["pro_team"], 0),
             }
         )
     players.sort(key=lambda x: (x["owner"] is None, x["owner"] or 0, x["free_agent_rank"] or 0, x["name"]))
@@ -168,7 +199,9 @@ def build(snap: dict[str, Any], anonymize: bool, now: datetime) -> dict[str, Any
             "matchup_period": period,
             "matchup_days": [day_dates[d] for d in sorted(day_dates)],
             "scoring_period": snap["scoring_period"],
-            "today": now.astimezone(espn.ET).date().isoformat(),
+            "today": today_iso,
+            "adds_effective_date": adds_from.isoformat(),
+            "regular_season_weeks": settings["matchup_periods"],
             "anonymized": anonymize,
             "free_agent_count": len(fa_rank),
         },
@@ -198,6 +231,9 @@ def build(snap: dict[str, Any], anonymize: bool, now: datetime) -> dict[str, Any
         "players": players,
     }
     recs = recommend(data)
+    per_game = recs.pop("player_projections", {})
+    for pl in players:
+        pl["projection"]["engine_fpts_per_game"] = per_game.get(pl["id"])
     data["recommendations"] = recs
     data["matchup"]["projected"] = recs.get("matchup_projection")
     return data

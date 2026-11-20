@@ -1,0 +1,80 @@
+"""Engine checks that run before every data build (python -m unittest discover -s tests)."""
+
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from engine import recommend
+from engine.lineup import best_day, solve
+
+
+def player(pid, name, value, positions, dates=("2026-11-21",), status="ACTIVE", owner=14, gp=15, locked=False):
+    line = {"fpts_avg": value, "fpts_total": value * gp, "gp": gp, "mpg": 30.0, "avg": {}}
+    return {
+        "id": pid, "name": name, "nba_team": f"T{pid}", "primary_position": positions[0],
+        "positions": list(positions) + ["UT"], "injury_status": status, "expected_return": None,
+        "owner": owner, "free_agent_rank": None if owner else pid, "free_agent_status": None if owner else "FREEAGENT",
+        "stats": {"season": line, "last_7": line, "last_15": line, "last_30": line},
+        "projection": {"espn": line, "engine_fpts_per_game": None},
+        "games_left_this_week": len(dates), "game_dates_left": list(dates), "back_to_back_dates": [],
+        "game_today_locked": locked, "games_left_season": 60,
+    }
+
+
+def league(players, roster, today="2026-11-21"):
+    return {
+        "meta": {"today": today, "adds_effective_date": today, "roster_slots": {"PG": 1, "C": 1, "UT": 1, "BE": 3},
+                 "regular_season_weeks": 19, "matchup_period": 5},
+        "my_team": {"roster": roster}, "opponent": None,
+        "matchup": {"my_score": 0, "opponent_score": None}, "players": players,
+    }
+
+
+class SolverTests(unittest.TestCase):
+    def test_beats_greedy(self):
+        # Greedy would put the 50-pt C/UT player at C and leave the C-only player out.
+        total, picks = solve([(1, 50, ["C", "UT"], None), (2, 40, ["C"], None)], ["C", "UT"])
+        self.assertEqual(total, 90)
+        self.assertEqual(picks, {0: 2, 1: 1})
+
+    def test_keeps_current_slot_on_ties(self):
+        _, picks = solve([(1, 30, ["PG", "UT"], "UT"), (2, 30, ["PG", "UT"], "PG")], ["PG", "UT"])
+        self.assertEqual(picks, {0: 2, 1: 1})
+
+    def test_locked_player_holds_slot_today(self):
+        ps = {1: player(1, "Locked", 10, ["PG"], locked=True), 2: player(2, "Better", 40, ["PG"])}
+        roster = [{"player_id": 1, "lineup_slot": "PG"}, {"player_id": 2, "lineup_slot": "BE"}]
+        day = best_day("2026-11-21", roster, ps, lambda p, d: p["stats"]["season"]["fpts_avg"], ["PG", "UT"], True)
+        self.assertEqual(day.assignment["PG"], 1)
+        self.assertEqual(day.assignment["UT"], 2)
+
+
+class RecommendTests(unittest.TestCase):
+    def test_starts_bench_player_over_injured_starter(self):
+        ps = [player(1, "Hurt", 45, ["PG"], status="OUT"), player(2, "Healthy", 30, ["PG"]),
+              player(3, "Big", 30, ["C"])]
+        roster = [{"player_id": 1, "lineup_slot": "PG"}, {"player_id": 2, "lineup_slot": "BE"},
+                  {"player_id": 3, "lineup_slot": "C"}]
+        recs = recommend(league(ps, roster))
+        actions = {(c["action"], c["player_id"]) for c in recs["changes"]}
+        self.assertIn(("bench", 1), actions)
+        self.assertTrue(("start", 2) in actions)
+        for item in recs["lineup"] + recs["changes"] + recs["pickups"]:
+            self.assertTrue(item["reason"])
+            self.assertIn(item["confidence"]["level"], ("high", "medium", "low"))
+
+    def test_never_drops_a_better_player(self):
+        ps = [player(1, "Star", 45, ["PG"], status="OUT"), player(2, "Mid", 30, ["C"]),
+              player(3, "Weak", 15, ["PG"]), player(9, "FreeAgent", 25, ["PG"], owner=None)]
+        roster = [{"player_id": 1, "lineup_slot": "PG"}, {"player_id": 2, "lineup_slot": "C"},
+                  {"player_id": 3, "lineup_slot": "UT"}]
+        recs = recommend(league(ps, roster))
+        drops = {p["drop_player_id"] for p in recs["pickups"]}
+        self.assertNotIn(1, drops)
+        self.assertEqual(drops, {3})
+
+
+if __name__ == "__main__":
+    unittest.main()
