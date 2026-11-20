@@ -4,20 +4,21 @@
 
 The user is Kevin, a designer and AI engineer. He plays in a 9-team ESPN fantasy basketball league (2026-27 season).
 
-He wants a personal tool that reads live data from his ESPN league (his roster, his opponents' rosters, free agents). It should recommend which players to start or sit and which free agents to pick up, based on recent performance, matchups and schedule.
+The tool reads live data from his ESPN league: his roster, his opponents' rosters and free agents. It recommends who to start or sit and which free agents to pick up, based on recent performance, matchups and schedule.
 
-This file is the agreed plan. Follow it phase by phase, and **start with Phase 0** unless Kevin says otherwise.
+**This is Kevin's submission for Palantir's Product Design "Show & Tell" take-home.** Reviewers must be able to open a public link and click through it themselves, so the app can't depend on Kevin's laptop. Demo quality and reliability matter more than feature count.
+
+This file is the agreed plan. Follow it phase by phase.
 
 ### Decisions already made (don't revisit unless asked)
 
 - **Recommend-only.** The tool never writes to ESPN: no lineup changes, adds, drops or trades. Kevin makes all moves himself on ESPN.
   - Why: ESPN has no supported write API, dropped players can't be recovered, and automated writes risk his account.
-  - A one-click "apply lineup" may come much later as a separate decision. Don't build it now.
-- **Single league only.** It's scoped to Kevin's own league.
-  - Don't build accounts, sign-in, multi-league support or a Chrome extension.
-  - Still keep all ESPN calls in one module (`espn_client.py`) so other leagues or a Yahoo adapter could be added later.
-- **Local first.** It runs on Kevin's laptop. Hosting comes later, if at all.
-- **Web dashboard** is the main interface. Kevin will design the UI in Figma before building the frontend.
+- **Single league only.** League `1851873571`, team `14`, `year=2027`. No accounts, sign-in or multi-league support.
+- **`espn-api` library, with every ESPN call in `pipeline/espn_client.py`.**
+- **No always-on backend or database.** A Python pipeline (fetch → engine → JSON) runs in GitHub Actions a few times a day. It commits JSON files to the repo, and the Next.js dashboard on Vercel reads them directly.
+- **Free to run.** GitHub Actions (free for public repos) and Vercel Hobby. No paid plans.
+- **Kevin designs the UI in Figma.** Until those designs arrive, the views are functional and unstyled.
 
 ### League details
 
@@ -27,12 +28,12 @@ This file is the agreed plan. Follow it phase by phase, and **start with Phase 0
 | **League ID** | `1851873571` |
 | **Kevin's team ID** | `14` |
 | **Season** | `2027` (ESPN labels the 2026-27 season as 2027; pass `year=2027` to the API) |
-| **Teams** | 9 |
-| **Privacy** | Assumed private, so authentication cookies are required |
+| **Teams** | 9, so one team has a bye each week. Kevin's bye is week 7. |
+| **Privacy** | Private, so the `espn_s2` and `SWID` cookies are required |
 
 ### League settings (answered in Phase 0, 2026-11-20)
 
-Pulled from ESPN's `mSettings` view by `backend/phase0.py`.
+Pulled from ESPN's `mSettings` view by `pipeline/phase0.py`.
 
 - **Scoring format:** **H2H points** (`H2H_POINTS`). The engine uses the points branch; z-scores per category aren't needed.
 - **Point values:**
@@ -49,34 +50,25 @@ Pulled from ESPN's `mSettings` view by `backend/phase0.py`.
 - **Roster slots:** PG, SG, SF, PF, C, G, F, 3× UT (10 starters), 3 bench, 1 IR.
   - **Position limit:** at most 4 centers on the roster. No other limits.
 - **Lineup lock:** per player at his game's tip-off (`INDIVIDUAL_GAME`), so lineups are decided **daily**. Adds/drops lock at the day's first game (`FIRSTGAME_SCORINGPERIOD`).
-- **Matchups:** 19 regular-season matchup periods of one week each, 4-team playoffs. Trade deadline 2027-02-26.
+- **Matchups:** 19 regular-season matchup periods, Monday to Sunday, and a 4-team playoff. Trade deadline 2027-02-26.
+  - espn-api's per-team schedule skips bye weeks, which shifts its week numbers. Read matchups from the raw `mMatchupScore` view instead.
 - **Acquisitions:** no season limit and no move limit, but **1 add per day** (matchup limit 1, applied per scoring period).
 - **Waivers:** traditional (no FAAB), 24-hour waivers, processed Sundays, order doesn't reset.
 - **Projections:** ESPN returns no matchup projection (`-1`) for this league, so the engine computes its own.
+- **Scoring check:** ESPN's stored fantasy-point averages match a recalculation from these point values exactly.
 
 ### ESPN access
 
-- **Library:** `espn-api` (https://github.com/cwendt94/espn-api), basketball module:
-
-  ```python
-  from espn_api.basketball import League
-  league = League(league_id=1851873571, year=2027, espn_s2=ESPN_S2, swid=SWID)
-  ```
-
-- **Raw endpoint (unofficial):** for settings the library doesn't expose, like scoring categories. Send the same cookies. Verify the URL before relying on it.
-
-  ```
-  https://lm-api-reads.fantasy.espn.com/apis/v3/games/fba/seasons/2027/segments/0/leagues/1851873571?view=mSettings
-  ```
-
-- **Auth:** the `espn_s2` and `SWID` cookies.
-  - Kevin copies them from Chrome DevTools (Application → Cookies → fantasy.espn.com). SWID keeps its curly braces.
-  - Load them from `.env`. Never hardcode them, log them, or commit them. Add `.env` to `.gitignore` from the first commit.
+- **Library:** `espn-api` (https://github.com/cwendt94/espn-api), basketball module.
+- **Raw views** (same cookies): `mSettings` for scoring items, roster slots and lock rules, and `mMatchupScore` for the schedule with matchup period IDs.
+- **Secrets:**
+  - **Locally:** `ESPN_S2` and `SWID` go in `.env`, which is gitignored. SWID keeps its curly braces.
+  - **In the cloud:** they're stored as GitHub Actions secrets. Kevin enters them himself.
+  - Never log them, commit them or send them to the frontend.
 - **Caveats:**
   - The API is unofficial and undocumented, and can change without notice.
-  - Cookies expire eventually. Show a clear "reconnect" error rather than failing silently.
-  - Refresh no more than every 15–30 minutes.
-- **NBA data:** prefer ESPN's data first. stats.nba.com (`nba_api`) often blocks requests and should only be added if ESPN's data isn't enough.
+  - Cookies expire. Fail loudly with a clear "reconnect" message.
+  - Refresh only a few times a day.
 
 ### Working style
 
@@ -85,72 +77,96 @@ Pulled from ESPN's `mSettings` view by `backend/phase0.py`.
 
 ---
 
-## Stack
+## Architecture
 
-- **Backend:** Python, FastAPI, `espn-api`
-- **Storage:** SQLite
-- **Frontend:** Next.js
-- **Hosting:** Local only
+```
+GitHub Actions (cron 3–4×/day + manual)
+  └─ pipeline/build_data.py: fetch (espn_client) → engine → validate (schema.json) → write
+       ├─ data/latest.json
+       └─ data/snapshots/<YYYY-MM-DD-HHMM>.json
+     commit data/ only if something changed
+Vercel (Next.js, web/) reads the JSON files directly. No backend API.
+```
 
-## Phase 0: Connect (1 weekend)
+### Repo structure
 
-1. Put `ESPN_S2` and `SWID` in `.env`, and add `.gitignore`.
-2. Write a script that pulls league settings, all rosters, the current matchup and the top free agents.
-3. Print and record the scoring format, categories or point values, roster slots, lineup lock and acquisition limits. Update the "Still unknown" section above with the answers.
+```
+pipeline/       espn_client.py, engine/, build_data.py (entry point), schema.json, phase0.py
+data/           latest.json, snapshots/ (+ featured.json)
+web/            Next.js app
+.github/workflows/refresh.yml
+requirements.txt, .env.example, .gitignore
+```
 
-**Done when:** Kevin's roster and his opponent's roster print in the terminal, and the league settings are known.
+### JSON output (validated against `pipeline/schema.json` before every write)
 
-**Status: done 2026-11-20.** `backend/espn_client.py` (the only ESPN module) and `backend/phase0.py`; run with `.venv/bin/python backend/phase0.py`. Settings are recorded under "League settings" above.
+- **meta:** `updated_at`, season, scoring type, scoring settings, roster slots, lineup lock type.
+- **my_team, opponent, matchup:** rosters and current projected totals (points, for this league).
+- **players:** id, name, NBA team, positions, injury status, stats (season, last 7/15/30 days), projection, `games_left_this_week`.
+- **recommendations:**
+  - **lineup:** for each slot, the player and the reason.
+  - **changes** vs. the current lineup.
+  - **pickups:** add, drop, gain this week, gain rest of season, reason, confidence.
+- **Anonymization:** with `ANONYMIZE=true` (the default), other managers' teams become "Opponent A" to "Opponent H". The letters stay the same between runs, so Replay snapshots line up. Kevin's own team keeps its name.
 
-## Phase 1: Data layer (1 week)
+## Phase 0: Connect (done 2026-11-20)
 
-1. Put all ESPN calls in one module (`espn_client.py`).
-2. Save to SQLite:
-   - **League:** rosters, matchups, free agents
-   - **Players:** stats (season, last 7/15/30 days), ESPN projections, injury status
-   - **NBA schedule:** games left this week per team
-3. Refresh on a schedule: every few hours, plus once before lineup lock.
+`pipeline/espn_client.py` connects with the cookies from `.env`. `pipeline/phase0.py` prints settings, rosters, the matchup and free agents. The settings are recorded above.
 
-**Done when:** The database stays current without manual work.
+## Phase 1: Pipeline → JSON + GitHub Actions
 
-## Phase 2: Recommendation engine (2–3 weeks)
+1. `build_data.py`: fetch → engine (stub until Phase 2) → JSON, validated against the schema.
+   - It writes to a temporary file and only replaces `latest.json` once the output passes the schema.
+   - On a cookie failure it exits non-zero with a clear message. `latest.json` is never overwritten with empty or partial data.
+2. `refresh.yml`:
+   - **Triggers:** cron about 3–4 times a day, plus `workflow_dispatch`.
+   - **Steps:** set up Python → install deps → run `build_data.py` with the secrets as env vars → commit `data/` only if it changed.
+3. **Test early that ESPN accepts requests from GitHub's servers.** If it blocks them, tell Kevin. The fallback is that Kevin runs `build_data.py` locally and pushes the data.
+
+**Done when:** a scheduled run updates `data/latest.json` on GitHub without Kevin's laptop.
+
+## Phase 2: Recommendation engine (inside the pipeline)
 
 1. **Projection per game:** Blend ESPN's projection, the season average and the last 14 days. Adjust for minutes trend, back-to-backs and injured teammates.
 2. **Volume:** Multiply by games left in the matchup period.
 3. **Value:**
-   - **Points league:** projected fantasy points.
-   - **Category league:** z-scores per category, weighted toward the categories that are close in this week's matchup.
-4. **Start/sit:** Pick the best lineup that fits the roster slots each day or week. Start greedy; switch to the PuLP solver if position eligibility gets messy.
-5. **Pickups:** For each free agent, compute the gain from swapping them for Kevin's weakest player, for both the rest of the week and the rest of the season.
-6. **Reasons:** A one-line reason on every recommendation (e.g. "+2 games this week, boosts AST and STL where you're close").
+   - **Points league (this league):** projected fantasy points.
+   - **Category league:** z-scores per category, weighted toward close categories. This league doesn't need it.
+4. **Start/sit:** Pick the best lineup that fits the roster slots each day. Start greedy; switch to the PuLP solver if position eligibility gets messy.
+5. **Pickups:** For each free agent, compute the gain from swapping them for Kevin's weakest player, for both the rest of the week and the rest of the season. Respect the 1-add-per-day limit.
+6. **Reason + confidence on every recommendation:**
+   - A one-line reason, e.g. "+2 games this week, 41 fpts/g over the last 15 days".
+   - A confidence of high, medium or low, with a short basis such as "small sample" or "injury status questionable".
+   - The engine's output only goes into the JSON.
 
-**Done when:** The engine outputs a lineup and the top 5 pickups, each with a reason.
+**Done when:** the JSON has a lineup and the top 5 pickups, each with a reason and a confidence.
 
-## Phase 3: Dashboard (1–2 weeks)
+## Phase 3: Dashboard on Vercel
 
-1. Kevin designs it in Figma first.
-2. Four views:
-   - **Today:** recommended lineup, with any changes from what's set
-   - **Matchup:** projection vs. this week's opponent
-   - **Free agents:** ranked, filterable by position
-   - **Opponent:** roster and games left
+1. Kevin provides Figma designs. Until then, build functional, unstyled views.
+2. Four views: **Today** (recommended lineup and changes from what's set), **Matchup** (projection vs. this week's opponent), **Free agents** (ranked, filterable by position), **Opponent** (roster and games left).
+3. **Live / Replay toggle.** Replay steps through the curated snapshots in `data/snapshots/featured.json`: 3–5 entries, each with a title and a one-line description of why it's interesting.
+4. **"Last updated"** on every page. If the data is more than 24 hours old, show a banner and default to Replay.
+5. Every recommendation shows its reason and confidence.
+6. Anonymization is on by default.
 
-**Done when:** Kevin checks this daily instead of ESPN's advice.
+**Done when:** someone with only the link understands it and clicks through in under 2 minutes.
 
-## Phase 4: Improve (ongoing)
+## Phase 4: Accuracy + presentation polish
 
-1. Log each recommendation and what actually happened, then tune the weights from that.
-2. Optional: a chat layer on top of the live league data, or a daily digest before lock.
+1. Log every recommendation with its timestamp, then record what actually happened (fantasy points) after the games.
+2. A simple "How accurate has it been" view built from that log.
+3. Polish for the presentation.
 
-## Out of scope (for now)
+## Out of scope
 
 - Any writes to ESPN (lineups, adds/drops, trades)
-- Multi-user accounts, syncing other people's leagues, Chrome extension
-- Yahoo or other platforms
-- Cloud hosting
+- Multi-user support, other leagues, other platforms
+- An always-on backend or database
 
 ## Risks
 
 - **ESPN's API is unofficial and can change.** Keeping it in one module limits the damage.
-- **The cookies expire.** Show a "reconnect" warning when they do.
-- **Rate limits.** Refresh no more than every 15–30 minutes.
+- **ESPN may block GitHub's servers.** Test this first; the fallback is a local run plus a push.
+- **The cookies expire.** The workflow fails loudly, the dashboard shows "Last updated", and stale data defaults the dashboard to Replay.
+- **GitHub pauses scheduled workflows** in public repos after 60 days without commits. The pipeline's own data commits keep the repo active.

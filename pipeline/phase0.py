@@ -1,8 +1,8 @@
 """Phase 0: connect to ESPN and print what the engine needs to know.
 
 Run from the repo root:
-    .venv/bin/python backend/phase0.py
-    .venv/bin/python backend/phase0.py --raw   # also print ESPN's raw roster/acquisition settings
+    .venv/bin/python pipeline/phase0.py
+    .venv/bin/python pipeline/phase0.py --raw   # also print ESPN's raw roster/acquisition settings
 
 Read-only. Prints league settings, Kevin's roster, this week's opponent and the top free agents.
 """
