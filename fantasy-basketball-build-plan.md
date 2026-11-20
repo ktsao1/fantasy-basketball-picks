@@ -173,6 +173,15 @@ requirements.txt, .env.example, .gitignore
 
 **Done when:** someone with only the link understands it and clicks through in under 2 minutes.
 
+**Status: live, unstyled, 2026-11-20.** https://fantasy-basketball-picks.vercel.app
+- **Hosting:** Vercel project `fantasy-basketball-picks`, Root Directory `web/`. Each push, including the pipeline's data commits, redeploys the site.
+- **Data loading:** `web/scripts/copy-data.mjs` runs before `dev` and `build`. It copies `data/latest.json`, `featured.json` and the featured snapshots into `public/data/`, and the browser fetches them.
+- **Built:** all four views, Live/Replay, "Last updated", a stale banner that defaults to Replay after 24 hours, and reason + confidence on every recommendation. Checked locally (including stale data and phone width) and on the live site.
+- **Config:** the scaffold's `cacheComponents` and `partialPrefetching` are off. With them on, the page never loaded in the browser.
+- **Still open:**
+  - Curate 3–5 Replay snapshots, including a day with real lineup changes. Only one real snapshot exists so far.
+  - Apply Kevin's Figma designs.
+
 ## Phase 4: Accuracy + presentation polish
 
 1. Log every recommendation with its timestamp, then record what actually happened (fantasy points) after the games.
