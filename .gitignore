@@ -1,0 +1,36 @@
+# secrets — never commit
+.env
+.env.*
+!.env.example
+*.cookies
+cookies.txt
+
+# node / next
+node_modules/
+.next/
+out/
+build/
+.vercel/
+*.tsbuildinfo
+next-env.d.ts
+npm-debug.log*
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# os / editor
+.DS_Store
+.claude/settings.local.json
+.claude/launch.json
+
+# misc from create-next-app
+*.pem
+.pnp
+.pnp.*
+coverage/
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
