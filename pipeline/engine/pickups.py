@@ -4,16 +4,20 @@ Gain this week = best remaining lineups with the swap − without it, counted fr
 the add takes effect (adds lock at the day's first game; waiver claims take a day longer).
 Gain rest of season = projected fpts per game × games left × expected availability, add
 minus drop, times the share of games a roster player typically starts.
+
+Each pickup also carries ranked `factors` (what the week gain is made of) and an 80% range
+for the week gain, from both players' game-to-game variance over the days that count.
 """
 
 from __future__ import annotations
 
 from datetime import date, timedelta
+from math import sqrt
 from typing import Any
 
-from . import confidence
+from . import confidence, factors
 from .lineup import best_day
-from .projection import Projection, season_availability
+from .projection import RANGE_Z, Projection, season_availability, variance_on
 
 START_SHARE = 0.85          # rough share of a rostered player's games that count
 DROP_CANDIDATES = 5         # weakest roster players considered as drops
@@ -92,14 +96,17 @@ def recommend_pickups(data, players, projections, value_of, slots) -> list[dict[
         if waiver:
             bits.append("on waivers, so it takes a day to clear")
         conf = confidence.for_choice([(fa, pf)], margin=score)
+        sd = sqrt(sum(variance_on(fa, pf, d) for d in days) + sum(variance_on(drop, pd, d) for d in days))
         out.append(
             {
                 "add_player_id": fa["id"],
                 "drop_player_id": drop["id"],
                 "gain_this_week": round(gain_week, 1),
+                "gain_this_week_range": [round(gain_week - RANGE_Z * sd, 1), round(gain_week + RANGE_Z * sd, 1)],
                 "gain_rest_of_season": round(gain_ros, 1),
                 "reason": f"Swap for {drop['name']}: " + ", ".join(bits) + ".",
                 "confidence": conf,
+                "factors": factors.for_swap(fa, drop, pf, pd, days, gain_week, waiver),
             }
         )
     return out

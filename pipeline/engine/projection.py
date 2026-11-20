@@ -21,6 +21,11 @@ TEAMMATE_OUT_BUMP = 0.04   # per injured high-usage teammate
 TEAMMATE_OUT_CAP = 0.08
 HIGH_USAGE_FPTS = 30.0
 BACK_TO_BACK = 0.95
+# Game-to-game spread of fantasy points, as a share of the per-game projection. Hand-set
+# (typical for NBA regulars) until Phase 4 measures it from logged results.
+GAME_CV = 0.35
+# z for the published ranges: 1.28 → an 80% interval.
+RANGE_Z = 1.28
 
 # Chance he plays a given game this week, by ESPN status.
 AVAILABILITY = {"ACTIVE": 1.0, None: 1.0, "PROBABLE": 0.9, "DAY_TO_DAY": 0.65,
@@ -119,3 +124,17 @@ def expected_on(p: dict[str, Any], proj: Projection, date: str) -> float:
         return 0.0
     factor = BACK_TO_BACK if date in p["back_to_back_dates"] else 1.0
     return proj.per_game * availability(p) * factor
+
+
+def healthy_on(p: dict[str, Any], proj: Projection, date: str) -> float:
+    """Expected fpts on `date` if he plays (no injury discount; 0 if no game)."""
+    if date not in p["game_dates_left"]:
+        return 0.0
+    return proj.per_game * (BACK_TO_BACK if date in p["back_to_back_dates"] else 1.0)
+
+
+def variance_on(p: dict[str, Any], proj: Projection, date: str) -> float:
+    """Variance of his fpts on `date`: game-to-game spread plus the chance he sits."""
+    mu = healthy_on(p, proj, date)
+    a = availability(p)
+    return a * (GAME_CV * mu) ** 2 + a * (1 - a) * mu ** 2

@@ -48,6 +48,27 @@ export type Player = {
   games_left_season?: number;
 };
 
+/**
+ * One structured reason behind a recommendation (engine ≥ 1.1). `impact_fpts` is the factor's
+ * signed share of the payoff; supporting signals (form, minutes, usage) have none. Factors come
+ * ranked: drivers by |impact|, then signals. Snapshots from engine 1.0 have no factors.
+ */
+export type FactorKey =
+  | "per_game" | "schedule" | "availability" | "lineup_fit" | "projection"
+  | "form" | "minutes" | "usage" | "back_to_back" | "injury" | "waivers" | "slot";
+
+export type Factor = {
+  key: FactorKey;
+  label: string;
+  value: number | null;
+  compare: number | null;
+  unit: "fpts" | "fpts/g" | "games" | "mpg" | "%" | null;
+  impact_fpts: number | null;
+};
+
+/** [low, high]: an 80% range. */
+export type Range = [number, number];
+
 export type LineupSlot = {
   date?: string;
   slot: string;
@@ -55,6 +76,7 @@ export type LineupSlot = {
   projected_fpts?: number | null;
   reason: string;
   confidence: Confidence;
+  factors?: Factor[];
 };
 
 export type Change = {
@@ -64,18 +86,28 @@ export type Change = {
   to_slot?: string | null;
   reason: string;
   confidence: Confidence;
+  factors?: Factor[];
 };
 
 export type Pickup = {
   add_player_id: number;
   drop_player_id: number | null;
   gain_this_week: number;
+  gain_this_week_range?: Range;
   gain_rest_of_season: number;
   reason: string;
   confidence: Confidence;
+  factors?: Factor[];
 };
 
-export type Projected = { mine: number | null; opponent: number | null } | null;
+export type Projected = {
+  mine: number | null;
+  opponent: number | null;
+  mine_range?: Range;
+  opponent_range?: Range | null;
+  /** Chance of winning the matchup, 0–1 (engine ≥ 1.1). */
+  win_probability?: number | null;
+} | null;
 
 export type Data = {
   meta: {

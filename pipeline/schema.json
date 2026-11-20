@@ -194,7 +194,8 @@
         "slot",
         "player_id",
         "reason",
-        "confidence"
+        "confidence",
+        "factors"
       ],
       "additionalProperties": false,
       "properties": {
@@ -220,6 +221,9 @@
         },
         "confidence": {
           "$ref": "#/$defs/confidence"
+        },
+        "factors": {
+          "$ref": "#/$defs/factors"
         }
       }
     },
@@ -229,7 +233,8 @@
         "action",
         "player_id",
         "reason",
-        "confidence"
+        "confidence",
+        "factors"
       ],
       "additionalProperties": false,
       "properties": {
@@ -261,6 +266,9 @@
         },
         "confidence": {
           "$ref": "#/$defs/confidence"
+        },
+        "factors": {
+          "$ref": "#/$defs/factors"
         }
       }
     },
@@ -272,7 +280,9 @@
         "gain_this_week",
         "gain_rest_of_season",
         "reason",
-        "confidence"
+        "confidence",
+        "factors",
+        "gain_this_week_range"
       ],
       "additionalProperties": false,
       "properties": {
@@ -297,8 +307,132 @@
         },
         "confidence": {
           "$ref": "#/$defs/confidence"
+        },
+        "factors": {
+          "$ref": "#/$defs/factors"
+        },
+        "gain_this_week_range": {
+          "$ref": "#/$defs/range"
         }
       }
+    },
+    "factor": {
+      "type": "object",
+      "required": [
+        "key",
+        "label",
+        "value",
+        "compare",
+        "unit",
+        "impact_fpts"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "enum": [
+            "per_game",
+            "schedule",
+            "availability",
+            "lineup_fit",
+            "projection",
+            "form",
+            "minutes",
+            "usage",
+            "back_to_back",
+            "injury",
+            "waivers",
+            "slot"
+          ]
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "compare": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "unit": {
+          "enum": [
+            null,
+            "fpts",
+            "fpts/g",
+            "games",
+            "mpg",
+            "%"
+          ]
+        },
+        "impact_fpts": {
+          "$ref": "#/$defs/nullableNumber"
+        }
+      }
+    },
+    "factors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/factor"
+      }
+    },
+    "range": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "matchupProjection": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "mine",
+            "opponent",
+            "mine_range",
+            "opponent_range",
+            "win_probability"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "mine": {
+              "type": "number"
+            },
+            "opponent": {
+              "$ref": "#/$defs/nullableNumber"
+            },
+            "mine_range": {
+              "$ref": "#/$defs/range"
+            },
+            "opponent_range": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/range"
+                }
+              ]
+            },
+            "win_probability": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              ]
+            }
+          }
+        }
+      ]
     }
   },
   "properties": {
@@ -459,27 +593,7 @@
           "$ref": "#/$defs/nullableNumber"
         },
         "projected": {
-          "oneOf": [
-            {
-              "type": "null"
-            },
-            {
-              "type": "object",
-              "required": [
-                "mine",
-                "opponent"
-              ],
-              "additionalProperties": false,
-              "properties": {
-                "mine": {
-                  "type": "number"
-                },
-                "opponent": {
-                  "$ref": "#/$defs/nullableNumber"
-                }
-              }
-            }
-          ]
+          "$ref": "#/$defs/matchupProjection"
         }
       }
     },
@@ -663,27 +777,7 @@
           }
         },
         "matchup_projection": {
-          "oneOf": [
-            {
-              "type": "null"
-            },
-            {
-              "type": "object",
-              "required": [
-                "mine",
-                "opponent"
-              ],
-              "additionalProperties": false,
-              "properties": {
-                "mine": {
-                  "type": "number"
-                },
-                "opponent": {
-                  "$ref": "#/$defs/nullableNumber"
-                }
-              }
-            }
-          ]
+          "$ref": "#/$defs/matchupProjection"
         }
       }
     }

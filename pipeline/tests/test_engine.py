@@ -76,5 +76,49 @@ class RecommendTests(unittest.TestCase):
         self.assertEqual(drops, {3})
 
 
+class ExplanationTests(unittest.TestCase):
+    """Factors, ranges and win probability: the structured reasons the dashboard draws."""
+
+    def test_swap_factors_add_up_to_the_gain(self):
+        two = ("2026-11-21", "2026-11-22")
+        ps = [player(1, "Starter", 40, ["PG"], dates=two), player(2, "Big", 35, ["C"], dates=two),
+              player(3, "Weak", 15, ["PG"]), player(9, "FreeAgent", 25, ["PG"], dates=two, owner=None)]
+        roster = [{"player_id": 1, "lineup_slot": "PG"}, {"player_id": 2, "lineup_slot": "C"},
+                  {"player_id": 3, "lineup_slot": "UT"}]
+        pick = recommend(league(ps, roster))["pickups"][0]
+        keys = [f["key"] for f in pick["factors"]]
+        self.assertEqual(keys[0], "schedule")              # 2 games vs 1 outweighs +10 fpts/g
+        drivers = [f["impact_fpts"] for f in pick["factors"] if f["impact_fpts"] is not None]
+        self.assertEqual(drivers, sorted(drivers, key=abs, reverse=True))
+        self.assertAlmostEqual(sum(drivers), pick["gain_this_week"], delta=1.0)
+        low, high = pick["gain_this_week_range"]
+        self.assertLess(low, pick["gain_this_week"])
+        self.assertGreater(high, pick["gain_this_week"])
+
+    def test_every_recommendation_has_factors(self):
+        ps = [player(1, "Hurt", 45, ["PG"], status="OUT"), player(2, "Healthy", 30, ["PG"]),
+              player(3, "Big", 30, ["C"])]
+        roster = [{"player_id": 1, "lineup_slot": "PG"}, {"player_id": 2, "lineup_slot": "BE"},
+                  {"player_id": 3, "lineup_slot": "C"}]
+        recs = recommend(league(ps, roster))
+        start = next(c for c in recs["changes"] if c["action"] == "start")
+        self.assertEqual(start["factors"][0]["key"], "projection")
+        self.assertAlmostEqual(start["factors"][0]["impact_fpts"], 30.0)
+        self.assertIn("availability", [f["key"] for f in start["factors"]])
+        for item in recs["lineup"] + recs["changes"] + recs["pickups"]:
+            self.assertIn("factors", item)
+
+    def test_win_probability_follows_the_projection(self):
+        mine = [player(1, "A", 40, ["PG"]), player(2, "B", 40, ["C"])]
+        theirs = [player(5, "X", 20, ["PG"], owner=3), player(6, "Y", 20, ["C"], owner=3)]
+        data = league(mine + theirs, [{"player_id": 1, "lineup_slot": "PG"}, {"player_id": 2, "lineup_slot": "C"}])
+        data["opponent"] = {"roster": [{"player_id": 5, "lineup_slot": "PG"}, {"player_id": 6, "lineup_slot": "C"}]}
+        data["matchup"]["opponent_score"] = 0
+        proj = recommend(data)["matchup_projection"]
+        self.assertGreater(proj["win_probability"], 0.5)
+        self.assertLess(proj["mine_range"][0], proj["mine"])
+        self.assertGreater(proj["opponent_range"][1], proj["opponent"])
+
+
 if __name__ == "__main__":
     unittest.main()

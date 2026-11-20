@@ -161,6 +161,14 @@ requirements.txt, .env.example, .gitignore
   - Respects the add lock (`meta.adds_effective_date`), the one-day waiver delay and the 4-center limit.
   - Never drops a player who projects higher per game. Without this rule it suggested dropping an injured Stephen Curry.
 - **Known limits:** the weights are hand-set until Phase 4 measures accuracy. The 5 pickups often share the same drop; they're alternatives, since only 1 add is allowed per day.
+- **Engine 1.1 (2026-11-20): structured reasons and ranges for the design.**
+  - Every lineup slot, change and pickup has ranked `factors` (`pipeline/engine/factors.py`): `{key, label, value, compare, unit, impact_fpts}`.
+  - On a pickup, the drivers add up to `gain_this_week`: per-game quality on shared days, extra games, injury discounts, and a "lineup fit" remainder when the solver's result differs by 1 fpt or more.
+  - Supporting signals (form, minutes, usage, waivers) have no impact value.
+  - `reason` is unchanged and stays as the plain-text fallback.
+  - Pickups have `gain_this_week_range`. `matchup_projection` has `mine_range`, `opponent_range` and `win_probability`.
+  - Ranges are 80% intervals from each player's game-to-game variance (a hand-set coefficient of variation of 0.35, plus the chance he sits) and assume independent games.
+  - Snapshots from engine 1.0 don't have these fields, so the web types treat them as optional.
 
 ## Phase 3: Dashboard on Vercel
 

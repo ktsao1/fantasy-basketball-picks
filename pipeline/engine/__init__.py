@@ -1,37 +1,26 @@
 """Phase 2: projections, start/sit and pickups. Runs inside the pipeline.
 
 recommend() takes the pipeline's JSON (without recommendations) and returns the
-recommendations block. Every lineup slot, change and pickup carries a one-line `reason`
-and a `confidence` {"level": "high"|"medium"|"low", "basis": str}.
+recommendations block. Every lineup slot, change and pickup carries a one-line `reason`,
+a `confidence` {"level": "high"|"medium"|"low", "basis": str} and ranked `factors`
+(see factors.py). Pickups and the matchup projection also carry 80% ranges.
 """
 
 from __future__ import annotations
 
+from math import erf, sqrt
 from typing import Any
 
-from . import confidence
+from . import confidence, factors
 from .lineup import BENCH_SLOTS, best_day, labels, starting_slots
 from .pickups import recommend_pickups
-from .projection import availability, expected_on, project_all
+from .projection import RANGE_Z, availability, expected_on, project_all, variance_on
 
-ENGINE_VERSION = "1.0"
+ENGINE_VERSION = "1.1"
 
 
 def _context(p: dict[str, Any], proj, date: str) -> list[str]:
-    bits = []
-    if proj.recent_avg is not None and proj.recent_gp >= 3:
-        bits.append(f"{proj.recent_avg:.1f} over the last 15 days")
-    if proj.minutes_factor >= 1.03:
-        bits.append("minutes trending up")
-    elif proj.minutes_factor <= 0.97:
-        bits.append("minutes trending down")
-    if proj.teammates_out:
-        bits.append(f"more usage with {proj.teammates_out[0]} out")
-    if date in p["back_to_back_dates"]:
-        bits.append("second night of a back-to-back")
-    if p["injury_status"] == "DAY_TO_DAY":
-        bits.append("day-to-day")
-    return bits
+    return [f["label"] for f in factors.signals(p, proj, date)]
 
 
 def _why_not(p: dict[str, Any], date: str) -> str | None:
@@ -68,13 +57,13 @@ def recommend(data: dict[str, Any]) -> dict[str, Any]:
             if pid is None:
                 lineup_out.append({"date": d, "slot": label, "player_id": None, "projected_fpts": None,
                                    "reason": "No eligible player has a game.",
-                                   "confidence": {"level": "high", "basis": "schedule"}})
+                                   "confidence": {"level": "high", "basis": "schedule"}, "factors": []})
                 continue
             p, proj = players[pid], projections[pid]
             if label in day.locked:
                 lineup_out.append({"date": d, "slot": label, "player_id": pid, "projected_fpts": None,
                                    "reason": "Locked: his game has started.",
-                                   "confidence": {"level": "high", "basis": "locked by ESPN"}})
+                                   "confidence": {"level": "high", "basis": "locked by ESPN"}, "factors": []})
                 continue
             v = day.values.get(pid, 0.0)
             reason = f"{v:.1f} projected fpts"
@@ -82,7 +71,8 @@ def recommend(data: dict[str, Any]) -> dict[str, Any]:
             if ctx:
                 reason += " · " + ", ".join(ctx)
             lineup_out.append({"date": d, "slot": label, "player_id": pid, "projected_fpts": round(v, 1),
-                               "reason": reason, "confidence": confidence.for_player(p, proj)})
+                               "reason": reason, "confidence": confidence.for_player(p, proj),
+                               "factors": factors.signals(p, proj, d)})
 
     # --- changes vs. the lineup set on ESPN (first remaining day only) --------
     changes = []
@@ -123,6 +113,7 @@ def recommend(data: dict[str, Any]) -> dict[str, Any]:
                 "action": "start", "player_id": pid, "from_slot": current.get(pid), "to_slot": slot,
                 "reason": f"Start {p['name']} ({v:.1f} proj){replaces}.",
                 "confidence": confidence.for_choice([(p, proj)], margin),
+                "factors": factors.for_start(p, proj, v, out, out_v, why, slot, first.date),
             })
             if out and rec_slot.get(out["id"]) is None:
                 changes.append({
@@ -130,6 +121,7 @@ def recommend(data: dict[str, Any]) -> dict[str, Any]:
                     "reason": f"Bench {out['name']}: {why}." if why
                               else f"Bench {out['name']}: {out_v:.1f} proj vs {v:.1f} for {p['name']}.",
                     "confidence": confidence.for_choice([(p, proj)], margin),
+                    "factors": factors.for_start(p, proj, v, out, out_v, why, slot, first.date, benching=True),
                 })
         # Starters who stay in but need a different slot to make room.
         for pid, label in rec_slot.items():
@@ -139,18 +131,38 @@ def recommend(data: dict[str, Any]) -> dict[str, Any]:
                     "action": "move", "player_id": pid, "from_slot": current.get(pid), "to_slot": slot,
                     "reason": f"Move {players[pid]['name']} to {slot} to fit the lineup.",
                     "confidence": {"level": "high", "basis": "slot eligibility"},
+                    "factors": [factors.factor("slot", f"only {slot} is open for him after the other changes")],
                 })
 
     # --- matchup projection --------------------------------------------------
+    # Totals are today's score plus the best remaining lineups; the spread comes from each
+    # starter's game-to-game variance (independent games), giving 80% ranges and P(win).
+    def spread(days) -> float:
+        return sum(variance_on(players[pid], projections[pid], day.date)
+                   for day in days for label, pid in day.assignment.items()
+                   if pid is not None and label not in day.locked)
+
+    def band(total: float, var: float) -> list[float]:
+        return [round(total - RANGE_Z * sqrt(var), 1), round(total + RANGE_Z * sqrt(var), 1)]
+
     m = data["matchup"]
-    mine_rest = sum(d.total for d in day_lineups)
-    projection = {"mine": round((m["my_score"] or 0) + mine_rest, 1), "opponent": None}
+    mine = (m["my_score"] or 0) + sum(d.total for d in day_lineups)
+    mine_var = spread(day_lineups)
+    projection = {"mine": round(mine, 1), "opponent": None, "mine_range": band(mine, mine_var),
+                  "opponent_range": None, "win_probability": None}
     if data["opponent"]:
         opp_roster = data["opponent"]["roster"]
         opp_days = sorted({d for r in opp_roster if r["player_id"] in players
                            for d in players[r["player_id"]]["game_dates_left"]})
-        opp_rest = sum(best_day(d, opp_roster, players, value_of, slots, d == today).total for d in opp_days)
-        projection["opponent"] = round((m["opponent_score"] or 0) + opp_rest, 1)
+        opp_lineups = [best_day(d, opp_roster, players, value_of, slots, d == today) for d in opp_days]
+        opp = (m["opponent_score"] or 0) + sum(d.total for d in opp_lineups)
+        opp_var = spread(opp_lineups)
+        projection["opponent"] = round(opp, 1)
+        projection["opponent_range"] = band(opp, opp_var)
+        sd = sqrt(mine_var + opp_var)
+        p_win = (1.0 if mine > opp else 0.0 if mine < opp else 0.5) if sd == 0 \
+            else 0.5 * (1 + erf((mine - opp) / (sd * sqrt(2))))
+        projection["win_probability"] = round(p_win, 3)
 
     return {
         "engine_version": ENGINE_VERSION,
