@@ -11,7 +11,8 @@ from dataclasses import dataclass
 from typing import Any
 
 BENCH_SLOTS = {"BE", "IR"}
-KEEP_SLOT_BONUS = 0.01  # tie-break: among equal lineups, keep players where they are
+KEEP_SLOT_BONUS = 0.01      # tie-break: among equal lineups, keep players where they are
+SPECIFIC_SLOT_BONUS = 0.001 # smaller tie-break: fill specific slots before UT, keeping UT flexible
 
 
 @dataclass
@@ -65,7 +66,7 @@ def solve(candidates: list[tuple[int, float, list[str], str | None]], slots: lis
                 for i in by_type.get(t, []):
                     if not mask & (1 << i):
                         new_mask = mask | (1 << i)
-                        bonus = KEEP_SLOT_BONUS if t == current else 0.0
+                        bonus = (KEEP_SLOT_BONUS if t == current else 0.0) + (SPECIFIC_SLOT_BONUS if t != "UT" else 0.0)
                         cand = (total + value + bonus, picks + ((i, pid),))
                         if new_mask not in nxt or nxt[new_mask][0] < cand[0]:
                             nxt[new_mask] = cand
@@ -105,7 +106,8 @@ def best_day(
                         locked[slot_labels[i]] = p["id"]
                         break
             continue
-        elig = [s for s in set(p["positions"]) if s in slots]
+        # Slot order, not set order, so equal lineups always resolve the same way.
+        elig = [s for s in dict.fromkeys(slots) if s in p["positions"]]
         candidates.append((p["id"], value_of(p, date), elig, r["lineup_slot"]))
 
     sub_slots = [slots[i] for i in open_slots]

@@ -231,9 +231,11 @@ def build(snap: dict[str, Any], anonymize: bool, now: datetime) -> dict[str, Any
         "players": players,
     }
     recs = recommend(data)
-    per_game = recs.pop("player_projections", {})
+    engine_proj = recs.pop("player_projections", {})
     for pl in players:
-        pl["projection"]["engine_fpts_per_game"] = per_game.get(pl["id"])
+        e = engine_proj.get(pl["id"]) or {}
+        pl["projection"]["engine_fpts_per_game"] = e.get("per_game")
+        pl["projection"]["engine_week_fpts"] = e.get("week")
     data["recommendations"] = recs
     data["matchup"]["projected"] = recs.get("matchup_projection")
     return data

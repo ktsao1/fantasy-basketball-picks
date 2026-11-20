@@ -585,6 +585,10 @@
               },
               "engine_fpts_per_game": {
                 "$ref": "#/$defs/nullableNumber"
+              },
+              "engine_week_fpts": {
+                "description": "expected fpts for the rest of this matchup week (availability and back-to-backs applied)",
+                "$ref": "#/$defs/nullableNumber"
               }
             }
           },

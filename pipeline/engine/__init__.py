@@ -158,5 +158,9 @@ def recommend(data: dict[str, Any]) -> dict[str, Any]:
         "changes": changes,
         "pickups": recommend_pickups(data, players, projections, value_of, slots),
         "matchup_projection": projection,
-        "player_projections": {pid: proj.per_game for pid, proj in projections.items()},
+        "player_projections": {
+            pid: {"per_game": proj.per_game,
+                  "week": round(sum(value_of(players[pid], d) for d in players[pid]["game_dates_left"]), 1)}
+            for pid, proj in projections.items()
+        },
     }

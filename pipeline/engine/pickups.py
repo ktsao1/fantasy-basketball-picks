@@ -86,7 +86,7 @@ def recommend_pickups(data, players, projections, value_of, slots) -> list[dict[
         drop_games = sum(1 for d in drop["game_dates_left"] if d in days)
         bits = [f"{pf.per_game:.1f} vs {pd.per_game:.1f} proj fpts/g"]
         if fa_games != drop_games:
-            bits.append(f"{fa_games} games left this week vs {drop_games}")
+            bits.append(f"{fa_games} game{'s' if fa_games != 1 else ''} left this week vs {drop_games}")
         if pf.recent_avg is not None and pf.recent_gp >= 3:
             bits.append(f"{pf.recent_avg:.1f} over the last 15 days")
         if waiver:
