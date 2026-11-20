@@ -125,6 +125,12 @@ requirements.txt, .env.example, .gitignore
 
 **Done when:** a scheduled run updates `data/latest.json` on GitHub without Kevin's laptop.
 
+**Status: done 2026-11-20.**
+- **ESPN accepts requests from GitHub's servers.** The check-only run passed, and the first full run committed `5493f60`.
+- **Schedule (UTC):** 07:00, 14:00, 18:30 and 22:30, which is about 2am, 9am, 1:30pm and 5:30pm ET.
+- **Exit codes:** `build_data.py` exits 2 on expired cookies and 3 on a schema failure. Either way it leaves `data/` untouched.
+- **Size:** snapshots are compact JSON, about 37 KB gzipped each.
+
 ## Phase 2: Recommendation engine (inside the pipeline)
 
 1. **Projection per game:** Blend ESPN's projection, the season average and the last 14 days. Adjust for minutes trend, back-to-backs and injured teammates.
