@@ -18,9 +18,9 @@ export function gameOn(p: Player | undefined, date: string): WeekGame | undefine
 export function gameLine(p: Player, date: string): string | null {
   const g = gameOn(p, date);
   if (!g) return null;
-  if (!g.opponent) return `${p.nba_team} · Game ${g.started ? "in progress" : "scheduled"}`;
+  if (!g.opponent) return `${p.nba_team} · ${g.started ? "Locked" : "Game scheduled"}`;
   const vs = `${p.nba_team} ${g.home ? "vs" : "@"} ${g.opponent}`;
-  return `${vs} · ${g.started ? "In progress" : tip(g.start_utc)}`;
+  return `${vs} · ${g.started ? "Locked" : tip(g.start_utc)}`;
 }
 
 /** "TOR @ DET · Final", for a game on a finished day. */
@@ -173,7 +173,7 @@ export function pastDay(
     if (!p && !fallback) return null;
     const scored = pts?.[String(id)] ?? null;
     // A player since dropped isn't in this pull, so his schedule is unknown: a score means he played.
-    const played = p ? !!gameOn(p, date) : !!scored;
+    const played = scored !== null && (scored !== 0 || !!gameOn(p, date));
     return {
       slot, player: p ?? { id, ...fallback! }, played, scored: played ? scored : null,
       line: p ? finalLine(p, date) : `${fallback!.nba_team} · ${played ? "Final" : "No game"}`,
@@ -204,7 +204,7 @@ export function pastDay(
   };
 }
 
-export type SideDay = { rows: { player: Player; value: number | null; scored: number | null }[]; total: number; off: Player[]; available: boolean };
+export type SideDay = { rows: { player: Player; value: number | null; scored: number | null; started: boolean }[]; total: number; off: Player[]; available: boolean };
 
 /** One side's starters on a day: mine from the recommended lineup, theirs from the opponent's. */
 export function sideDay(data: Data, players: Map<number, Player>, date: string, mine: boolean): SideDay {
@@ -216,12 +216,37 @@ export function sideDay(data: Data, players: Map<number, Player>, date: string, 
     .map((s) => {
       const player = players.get(s.player_id!)!;
       const live = s.projected_fpts == null && !!gameOn(player, date)?.started;
-      return { player, value: s.projected_fpts ?? null, scored: live ? player.points_today ?? null : null };
+      return { player, value: s.projected_fpts ?? null, scored: live ? player.points_today ?? null : null, started: live };
     })
     .sort((a, b) => (b.value ?? -1) - (a.value ?? -1));
   const on = new Set(rows.map((r) => r.player.id));
   const off = (team?.roster ?? []).map((r) => players.get(r.player_id)).filter((p): p is Player => !!p && !on.has(p.id));
   return { rows, total: rows.reduce((s, r) => s + (r.value ?? 0) + (r.scored ?? 0), 0), off, available };
+}
+
+/** Weekly score through the selected date. Forecasts start from ESPN's current score. */
+export function scoreThroughDate(
+  data: Data, players: Map<number, Player>, actuals: Record<string, Record<string, number>>,
+  lineups: DayLineups, date: string,
+) {
+  const today = data.meta.today;
+  const through = weekDays(data).filter((day) => day <= date);
+  const current = [data.matchup.my_score, data.matchup.opponent_score] as const;
+  const scores = [data.my_team, data.opponent].map((team, i) => {
+    if (date === today) return current[i];
+    if (date > today) {
+      if (current[i] == null) return null;
+      const remaining = through.filter((day) => day >= today).map((day) => sideDay(data, players, day, i === 0));
+      if (remaining.some((side) => !side.available)) return null;
+      return current[i] + remaining.reduce((total, side) =>
+        total + side.rows.reduce((sum, row) => sum + (row.value ?? 0), 0), 0);
+    }
+    if (!team) return null;
+    const finished = through.map((day) => pastDay(team, players, actuals, lineups, day));
+    if (finished.some((day) => !day.hasResults || !day.hasSlots)) return null;
+    return finished.reduce((total, day) => total + day.total, 0);
+  });
+  return { mine: scores[0], opponent: scores[1], through: through.length };
 }
 
 export function pickupFor(data: Data, addId: number): { pickup: Pickup; rank: number } | null {
@@ -263,10 +288,10 @@ export function addTiming(data: Data): string {
 export function dropCaution(data: Data, drop: Player | undefined): string | null {
   const g = drop ? gameOn(drop, data.meta.today) : undefined;
   if (!drop || !g) return null;
-  const name = drop.name.split(" ").slice(-1)[0];
+  const name = lastName(drop.name);
   return g.started
-    ? `${drop.name} is playing right now. Make the move after his game ends so tonight's points stay with you.`
-    : `${name} plays tonight (${tip(g.start_utc)}). Make the move after his game so you keep his points.`;
+    ? `${name}’s game has tipped off. If it’s still underway, wait until it ends to keep his points.`
+    : `${name} plays today (${tip(g.start_utc)}). Wait until his game ends to keep his points.`;
 }
 
 // ---------- ranking ----------
@@ -301,6 +326,11 @@ export function addStart(data: Data, p?: Player): string {
 export function countableGames(data: Data, p: Player): number {
   const from = addStart(data, p);
   return (p.game_dates_left ?? []).filter((d) => d >= from).length;
+}
+
+export function countableSchedule(data: Data, p: Player): WeekGame[] {
+  return (p.game_dates_left ?? []).filter((date) => date >= addStart(data, p))
+    .map((date) => gameOn(p, date)).filter((game): game is WeekGame => !!game);
 }
 
 /** His projected points from the games an add can use (the engine's week total, scaled). */

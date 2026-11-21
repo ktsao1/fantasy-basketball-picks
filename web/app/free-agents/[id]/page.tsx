@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Card, Chevron, Empty, Games, Meter, Photo, Tag, usePageTitle } from "@/components/ui";
+import { PlayerGameLog } from "@/components/PlayerGameLog";
 import { useData } from "@/lib/data";
 import { dayShort, fmt, injury, lastName, positions, signed, splitAvg, unavailable, weekday } from "@/lib/format";
 import type { Data, Factor, Pickup, Player } from "@/lib/types";
@@ -66,7 +67,7 @@ export default function FreeAgentDetail() {
         {pick && drop ? <Verdict pick={pick} drop={drop} /> : (
           <div className="verdict">
             <span className="num" style={{ color: "#fff" }}>{fmt(p.projection.engine_week_fpts)}</span>
-            <small>proj. pts this week · not one of the top {data.recommendations.pickups.length} swaps</small>
+            <small>proj. pts this week · no scored swap</small>
           </div>
         )}
       </section>
@@ -83,6 +84,7 @@ export default function FreeAgentDetail() {
           {drop ? <Versus data={data} p={p} drop={drop} /> : <Form p={p} />}
         </div>
       </div>
+      <PlayerGameLog id={p.id} season={data.meta.season} scoring={data.meta.scoring_items} />
     </div>
   );
 }
@@ -91,6 +93,7 @@ export default function FreeAgentDetail() {
 function Action({ data, p, drop }: { data: Data; p: Player; drop: Player }) {
   const caution = dropCaution(data, drop);
   const g = gameOn(drop, data.meta.today);
+  const claim = p.free_agent_status === "WAIVERS";
   return (
     <div className="action">
       {caution && <p className="caution action-caution">{caution}</p>}
@@ -99,11 +102,11 @@ function Action({ data, p, drop }: { data: Data; p: Player; drop: Player }) {
         <Photo p={drop} size={32} round dim />
       </span>
       <div className="grow">
-        <b>Add {p.name}, drop {drop.name}</b>
-        <small>{addTiming(data)}</small>
+        <b>{claim ? "Claim" : "Add"} {p.name}, drop {drop.name}</b>
+        <small>{claim ? `Projected to count from ${weekday(addStart(data, p))} if the claim clears` : addTiming(data)}</small>
       </div>
       <a className="btn" href={ESPN_TEAM_URL} target="_blank" rel="noreferrer">
-        {g ? `After ${lastName(drop.name)}’s game: open ESPN` : "Make the move on ESPN"} <Chevron dir="up-right" />
+        {g ? `Open ESPN after ${lastName(drop.name)}’s game` : claim ? "Open ESPN to claim" : "Make the move on ESPN"} <Chevron dir="up-right" />
         <span className="sr-only"> (opens ESPN in a new tab)</span>
       </a>
     </div>
@@ -120,16 +123,10 @@ function NotFirst({ data, pick, p }: { data: Data; pick: Pickup; p: Player }) {
   const dWeek = pick.gain_this_week - top.gain_this_week;
   const dLater = perWeekLater(data, pick) - perWeekLater(data, top);
   const name = lastName(p.name), tn = lastName(t.name);
-  const tail = dWeek > 0 && dLater < 0
-    ? `${name} gives more this week, but ${tn} is worth ${fmt(-dLater)} more in a typical week after, for the rest of the season.`
-    : dWeek <= 0 && dLater <= 0
-      ? `${tn} is ahead both this week and after it.`
-      : `${name} is worth more after this week, but ${tn} gives more now.`;
   return (
     <section className="notfirst" aria-label={`Why ${name} ranks below ${tn}`}>
       <div className="notfirst-head">
-        <b>Why #{rank}, not #1</b>
-        <span>{tail}</span>
+        <h2>Rank #{rank} compared with the top pick</h2>
         <Link href={`/free-agents/${t.id}`} className="notfirst-link">See {tn} <Chevron dir="right" /></Link>
       </div>
       <table className="nf-table">
@@ -156,12 +153,13 @@ function Back() {
 
 function Verdict({ pick, drop }: { pick: Pickup; drop: Player }) {
   const r = pick.gain_this_week_range;
+  const min = Math.min(0, (r?.[0] ?? pick.gain_this_week) * 1.15);
   const max = Math.max(10, (r?.[1] ?? pick.gain_this_week) * 1.15);
-  const pct = (v: number) => `${Math.min(100, Math.max(0, (v / max) * 100))}%`;
+  const pct = (v: number) => `${((v - min) / (max - min)) * 100}%`;
   return (
     <div className="verdict">
-      <span className="num">{signed(pick.gain_this_week)}</span>
-      <small>proj. pts this week over {drop.name}</small>
+      <span className={`num${pick.gain_this_week < 0 ? " loss" : ""}`}>{signed(pick.gain_this_week)}</span>
+      <small>Projected change this week vs. {drop.name}</small>
       {r && (
         <>
           <div className="range" role="img" aria-label={`80% range ${signed(r[0])} to ${signed(r[1])}`}>
@@ -182,15 +180,39 @@ function Verdict({ pick, drop }: { pick: Pickup; drop: Player }) {
 // Signals the add-vs-drop table already shows side by side.
 const IN_TABLE = new Set<Factor["key"]>(["form", "minutes", "per_game"]);
 
+const REASON_PATH: Partial<Record<Factor["key"] | "season", string>> = {
+  schedule: "M4 7h16v13H4zM4 11h16M8 4v5m8-5v5",
+  per_game: "M4 19h16M7 15v-4m5 4V7m5 8V4",
+  availability: "m5 12 5 5 9-10",
+  lineup_fit: "M5 6h14M5 12h14M5 18h14M8 4v4m8 2v4m-6 2v4",
+  injury: "M12 5v14M5 12h14",
+  projection: "m4 17 6-6 4 4 6-8m-6 0h6v6",
+  usage: "m5 16 5-5 4 3 5-8m-5 0h5v5",
+  minutes: "M12 7v5l3 2m5-2a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z",
+  back_to_back: "m10 6-6 6 6 6m6-12-6 6 6 6",
+  waivers: "M7 4h10M7 20h10M8 4v4l8 8v4M16 4v4l-8 8v4",
+  season: "M4 7h16v13H4zM4 11h16M8 4v5m8-5v5m-8 8h8",
+};
+
+function ReasonIcon({ reason }: { reason: Factor["key"] | "season" }) {
+  return (
+    <span className="reason-icon" aria-hidden>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <path d={REASON_PATH[reason] ?? REASON_PATH.per_game} />
+      </svg>
+    </span>
+  );
+}
+
 function Why({ pick, p, drop }: { pick: Pickup; p: Player; drop: Player }) {
   const factors = pick.factors ?? [];
   const drivers = factors.filter((f) => f.impact_fpts != null);
   const signals = factors.filter((f) => f.impact_fpts == null && !IN_TABLE.has(f.key));
   return (
     <Card title="Why he’s a good add" sub={`Where the ${signed(pick.gain_this_week)} comes from.`}>
-      {drivers.map((f, i) => (
+      {drivers.map((f) => (
         <div className="driver" key={f.key}>
-          <span className="rank">{i + 1}</span>
+          <ReasonIcon reason={f.key} />
           <div className="who">
             <strong style={{ fontSize: 15, fontWeight: 600 }}>{DRIVER_TITLE[f.key] ?? f.key}</strong>
             <small style={{ fontSize: 13, fontWeight: 400 }}>{pts(f.label)}</small>
@@ -206,6 +228,7 @@ function Why({ pick, p, drop }: { pick: Pickup; p: Player; drop: Player }) {
         <p className="section-label" style={{ margin: "8px 0 2px" }}>Also in his favour over {lastName(drop.name)} · not counted above</p>
         {signals.map((f) => (
           <div className="signal" key={f.key}>
+            <ReasonIcon reason={f.key} />
             <div className="who">
               <strong style={{ fontWeight: 600 }}>{SIGNAL_TITLE[f.key] ?? f.key}</strong>
               <small style={{ fontWeight: 400 }}>{pts(f.label)}</small>
@@ -214,6 +237,7 @@ function Why({ pick, p, drop }: { pick: Pickup; p: Player; drop: Player }) {
           </div>
         ))}
         <div className="signal">
+          <ReasonIcon reason="season" />
           <div className="who">
             <strong style={{ fontWeight: 600 }}>Rest of season</strong>
             <small style={{ fontWeight: 400 }}>{signed(pick.gain_rest_of_season, 0)} proj. pts over {p.games_left_season ?? "his remaining"} games</small>
@@ -325,33 +349,29 @@ function Versus({ data, p, drop }: { data: Data; p: Player; drop: Player }) {
   ];
   // Only call a winner when the gap is meaningful: 5% or one whole game.
   const clear = (x: number | null, y: number | null) => x != null && y != null && x - y >= Math.max(0.05 * Math.abs(y), 0.5);
-  const dropWins = rows.filter(([, a, b]) => clear(b, a)).map(([m]) => m.toLowerCase());
-  const list = (xs: string[]) => (xs.length < 2 ? xs[0] : `${xs.slice(0, -1).map((x) => `“${x}”`).join(", ")} and “${xs[xs.length - 1]}”`);
   const digits = (m: string) => (m.startsWith("Games") ? 0 : 1);
   return (
-    <Card title={`${lastName(p.name)} vs ${lastName(drop.name)}`}>
+    <Card title="Head to head">
       <table className="vs-table">
         <thead>
           <tr>
-            <th />
-            <th><Photo p={p} size={36} round />{lastName(p.name)}<small style={{ color: "var(--pos)" }}>Add</small></th>
-            <th><Photo p={drop} size={36} round dim />{lastName(drop.name)}<small className="muted">Drop</small></th>
+            <th scope="col"><Photo p={p} size={36} round />{lastName(p.name)}<small style={{ color: "var(--pos)" }}>Add</small></th>
+            <th scope="col"><span className="sr-only">Stat</span></th>
+            <th scope="col"><Photo p={drop} size={36} round dim />{lastName(drop.name)}<small className="muted">Drop</small></th>
           </tr>
         </thead>
         <tbody>
           {rows.map(([m, a, b, proj]) => (
             <tr key={m}>
-              <td>{m}{proj && <span className="hatch" style={{ display: "inline-block", width: 10, height: 10, borderRadius: 2, marginLeft: 6, verticalAlign: -1 }} title="Projected" />}</td>
               <td className={`v${clear(a, b) ? " win" : ""}`}><span className="num">{fmt(a, digits(m))}</span></td>
+              <th scope="row">{m}{proj && <span className="hatch vs-proj" aria-hidden />}</th>
               <td className={`v${clear(b, a) ? " win" : ""}`}><span className="num">{fmt(b, digits(m))}</span></td>
             </tr>
           ))}
         </tbody>
       </table>
       <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>
-        {dropWins.length === 0
-          ? `${lastName(p.name)} is ahead or level on every measure.`
-          : `${lastName(drop.name)} is ahead on ${dropWins.length === 1 ? `“${dropWins[0]}”` : list(dropWins)}; ${lastName(p.name)} wins on the rest, including this week.`}
+        Green marks a meaningful edge on that stat.
       </p>
     </Card>
   );

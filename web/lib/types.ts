@@ -37,6 +37,15 @@ export type WeekGame = {
   started: boolean;
 };
 
+export type PlayerGame = {
+  id: string;
+  date: string;
+  opponent: string | null;
+  opponentName: string | null;
+  home: boolean;
+  stats: Record<string, number>;
+};
+
 export type Player = {
   id: number;
   name: string;

@@ -75,6 +75,15 @@ class RecommendTests(unittest.TestCase):
         self.assertNotIn(1, drops)
         self.assertEqual(drops, {3})
 
+    def test_scores_qualifying_pickups_across_the_tracked_pool(self):
+        roster = [{"player_id": 1, "lineup_slot": "PG"}]
+        players = [player(1, "Starter", 10, ["PG"])]
+        players += [player(pid, f"Free agent {pid}", pid, ["PG"], owner=None) for pid in range(11, 46)]
+        players.append(player(46, "Unavailable", 50, ["PG"], owner=None, status="OUT"))
+        pickups = recommend(league(players, roster))["pickups"]
+        self.assertEqual([pick["add_player_id"] for pick in pickups], list(range(45, 10, -1)))
+        self.assertTrue(all(pick["drop_player_id"] == 1 for pick in pickups))
+
 
 class ExplanationTests(unittest.TestCase):
     """Factors, ranges and win probability: the structured reasons the dashboard draws."""

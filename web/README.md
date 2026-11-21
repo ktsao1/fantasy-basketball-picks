@@ -1,9 +1,9 @@
 # Dashboard (Phase 3)
 
 Next.js app that shows the pipeline's output: Today, Matchup, Free agents and a detail page per free agent.
-There is no backend. `scripts/copy-data.mjs` (run automatically before `dev` and `build`)
+`scripts/copy-data.mjs` (run automatically before `dev` and `build`)
 copies `../data/latest.json`, `track_record.json`, `actuals.json` and `lineups.json` into `public/data/`,
-and the browser fetches them.
+and the browser fetches them. Free-agent game logs use a Next.js route to fetch and cache ESPN's public NBA box-score data.
 
 ```bash
 npm install

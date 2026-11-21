@@ -14,7 +14,7 @@ export function StartSit({ v, isToday, onJump }: { v: DayView; isToday: boolean;
   // Nothing to do on this day: point at the next day that has moves, so they aren't missed.
   const next = n === 0 && data ? nextMoves(data, players, v.date) : null;
   return (
-    <Card title="Start / sit">
+    <Card title="Start / sit" aside={n > 0 && <Tag tone="rec-soft">{n} recommended {n === 1 ? "move" : "moves"}</Tag>}>
       {n === 0 ? (
         <>
           <p>No changes needed {when}.</p>
@@ -83,7 +83,7 @@ export function StartSit({ v, isToday, onJump }: { v: DayView; isToday: boolean;
 export function FreeAgency({ isToday = true }: { isToday?: boolean }) {
   const { data, players } = useData();
   if (!data) return null;
-  const [top, ...rest] = data.recommendations.pickups; // engine order = value order
+  const [top, ...rest] = data.recommendations.pickups.slice(0, 5); // Keep Today's shortlist compact.
   const add = top && players.get(top.add_player_id);
   const drop = top?.drop_player_id != null ? players.get(top.drop_player_id) : undefined;
   // The caution is about making the move right now, so it belongs on today's view only.
@@ -94,7 +94,7 @@ export function FreeAgency({ isToday = true }: { isToday?: boolean }) {
 
   return (
     <Card
-      title="Free agency moves"
+      title="Free agency"
       aside={<span className="muted" style={{ fontSize: 12 }}>{addTiming(data)}</span>}
     >
       {!top || !add ? (

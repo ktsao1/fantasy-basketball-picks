@@ -21,8 +21,6 @@ from .projection import RANGE_Z, Projection, season_availability, variance_on
 
 START_SHARE = 0.85          # rough share of a rostered player's games that count
 DROP_CANDIDATES = 5         # weakest roster players considered as drops
-FA_CANDIDATES = 30          # best free agents (by rest-of-season value) evaluated in full
-TOP_N = 5
 MIN_SCORE = 1.0             # don't recommend swaps worth less than ~1 fpt/week
 MAX_CENTERS = 4
 
@@ -52,7 +50,6 @@ def recommend_pickups(data, players, projections, value_of, slots) -> list[dict[
 
     free_agents = [p for p in players.values() if p["owner"] is None]
     free_agents.sort(key=lambda p: -ros_value(p, projections[p["id"]]))
-    free_agents = free_agents[:FA_CANDIDATES]
 
     centers = sum(1 for p in mine if p["primary_position"] == "C")
     results = []
@@ -84,7 +81,7 @@ def recommend_pickups(data, players, projections, value_of, slots) -> list[dict[
 
     results.sort(key=lambda r: -r[1])
     out = []
-    for fa, score, drop, gain_week, gain_ros, waiver, days in results[:TOP_N]:
+    for fa, score, drop, gain_week, gain_ros, waiver, days in results:
         pf, pd = projections[fa["id"]], projections[drop["id"]]
         fa_games = sum(1 for d in fa["game_dates_left"] if d in days)
         drop_games = sum(1 for d in drop["game_dates_left"] if d in days)

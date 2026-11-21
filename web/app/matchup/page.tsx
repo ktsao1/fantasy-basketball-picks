@@ -1,15 +1,15 @@
 "use client";
 
-import { DayStepper, Empty, Photo, Tag, useDay, usePageTitle } from "@/components/ui";
+import { DayStepper, Empty, Photo, Source, Tag, useDay, usePageTitle } from "@/components/ui";
 import { useData } from "@/lib/data";
 import { dayShort, fmt, monthDay, signed, weekday } from "@/lib/format";
-import { dayView, gameLine, pastDay, scenarios, sideDay, weekDays as allDays } from "@/lib/view";
+import { dayView, gameLine, pastDay, scenarios, scoreThroughDate, sideDay, weekDays as allDays } from "@/lib/view";
 
 const fmt0 = (n: number | null | undefined) => (n == null ? "—" : Math.round(n).toLocaleString("en-US"));
 
 export default function MatchupPage() {
   usePageTitle("Matchup");
-  const { data, players } = useData();
+  const { data, players, actuals, lineups } = useData();
   const days = data ? allDays(data) : [];
   const [picked, setPicked] = useDay(days, data?.meta.today);
   if (!data) return null;
@@ -20,9 +20,6 @@ export default function MatchupPage() {
   const proj = data.recommendations.matchup_projection ?? m.projected ?? null;
   const me = data.my_team;
   const today = data.meta.today;
-  const weekDays = data.meta.matchup_days;
-  const played = Math.max(0, weekDays.indexOf(today));
-  const now = (m.my_score ?? 0) - (m.opponent_score ?? 0);
   // The engine's projection: the rest of the week with the recommended moves.
   const moves = scenarios(data, players)?.find((x) => x.plan === "moves");
   const mineFinal = moves?.mine ?? proj?.mine ?? null;
@@ -30,59 +27,77 @@ export default function MatchupPage() {
   const pWin = moves?.win ?? proj?.win_probability ?? null;
   if (!picked) return <Empty>No games this week.</Empty>;
   const date = picked;
+  const past = date < today;
+  const future = date > today;
+  const score = scoreThroughDate(data, players, actuals, lineups, date);
+  const hasStarted = !past && !future && data.players.some((player) => player.game_today_locked);
+  const status = past ? (actuals[date] ? "Final" : "Awaiting results") : hasStarted ? "Live / projected" : "Projected";
+  const margin = score.mine == null || score.opponent == null ? null : score.mine - score.opponent;
   const lead = (x: number) => (x === 0 ? "Tied" : x > 0 ? `Up ${fmt0(x)}` : `Down ${fmt0(-x)}`);
+  const projectedMargin = mineFinal == null || oppFinal == null ? null : Math.round(mineFinal) - Math.round(oppFinal);
   const verdict =
-    mineFinal == null || oppFinal == null ? null
-      : Math.round(mineFinal) === Math.round(oppFinal) ? "Projected to tie"
-        : mineFinal > oppFinal ? "You’re projected to win" : `${opp.name} is projected to win`;
+    projectedMargin == null ? null
+      : projectedMargin === 0 ? "Projected tie"
+        : `${projectedMargin > 0 ? "You’re" : `${opp.name} is`} projected to win by ${fmt0(Math.abs(projectedMargin))}`;
   const youPct = pWin != null ? Math.round(pWin * 100) : null;
+  const pointShare = mineFinal != null && oppFinal != null && mineFinal >= 0 && oppFinal >= 0 && mineFinal + oppFinal > 0
+    ? (100 * mineFinal) / (mineFinal + oppFinal)
+    : null;
+  const roundedShare = Math.round((pointShare ?? 0) * 10) / 10;
 
   return (
     <div className="stack" style={{ gap: 24 }}>
+      <h1 className="sr-only">Matchup</h1>
       <section className="score-band on-dark" aria-label="Score">
         <div className="teams">
           <Team init={initialsOf(me.name)} name={me.name} sub={`You · ${me.wins}–${me.losses}${me.standing ? ` · ${ordinal(me.standing)}` : ""}`} color="var(--accent-on-dark)" />
-          <span className="pill-week">Week {m.matchup_period} · {Math.max(0, weekDays.length - played)} days left</span>
+          <span className="pill-week">Week {m.matchup_period} · {days.length - score.through + Number(date === today)} days left</span>
           <Team init={initialsOf(opp.name)} name={opp.name} sub={`${opp.wins}–${opp.losses}${opp.standing ? ` · ${ordinal(opp.standing)}` : ""}`} color="var(--opp-on-dark)" right />
         </div>
 
-        <div className="score-row">
-          <span className="num">{fmt0(m.my_score)}</span>
+        <div className={`score-row${future ? " score-projected" : ""}`} aria-live="polite">
+          <span className="num">{fmt0(score.mine)}</span>
           <div className="mid">
-            <span className="src src-espn src-logo">
+            {future ? <Source kind="proj" /> : <span className="src src-espn src-logo">
               {/* eslint-disable-next-line @next/next/no-img-element -- a 16px local mark */}
               <img src="/img/espn.png" alt="" width={16} height={16} />
               ESPN
-            </span>
-            <b>Current score</b>
-            <small>{lead(now)} · {played} of {weekDays.length} days played</small>
+            </span>}
+            <b>{future ? "Projected through" : past ? "Score through" : "Score now"}{date !== today && ` ${weekday(date)}`}</b>
+            <small>{margin == null ? "Score unavailable" : lead(margin)} · Day {score.through} of {days.length}</small>
           </div>
-          <span className="num r">{fmt0(m.opponent_score)}</span>
+          <span className="num r">{fmt0(score.opponent)}</span>
         </div>
 
-        <div className="proj-row">
+        {!past && <div className="proj-row">
           <span className="proj-total"><span className="num">{fmt0(mineFinal)}</span> proj. total</span>
-          {verdict && <h1 className="verdict-line">{verdict}</h1>}
+          <div className="proj-verdict">
+            {verdict && <h2 className="verdict-line">{verdict}</h2>}
+            {youPct != null && <p>Win chance · You {youPct}% · {opp.name} {100 - youPct}%</p>}
+          </div>
           <span className="proj-total r">proj. total <span className="num">{fmt0(oppFinal)}</span></span>
-        </div>
+        </div>}
 
-        {youPct != null && (
-          <div className="win-odds">
-            <div className="win-bar" role="img" aria-label={`${youPct}% chance you win, ${100 - youPct}% ${opp.name}`}>
-              <span style={{ flexGrow: youPct, background: "var(--accent-on-dark)" }} />
-              <span style={{ flexGrow: 100 - youPct, background: "var(--opp-on-dark)" }} />
+        {!past && pointShare != null && (
+          <div className="point-share">
+            <div className="point-share-bar" role="img" aria-label={`Projected point share: you ${fmt(roundedShare)}%, ${opp.name} ${fmt(100 - roundedShare)}%`}>
+              {pointShare > 0 && <span style={{ flexGrow: pointShare, background: "var(--accent-on-dark)" }} />}
+              {pointShare < 100 && <span style={{ flexGrow: 100 - pointShare, background: "var(--opp-on-dark)" }} />}
             </div>
-            <div className="win-labels" aria-hidden>
-              <span>{youPct}% you win</span>
-              <span>{100 - youPct}% {opp.name} wins</span>
+            <div className="point-share-labels" aria-hidden>
+              <span>{fmt(roundedShare)}%</span>
+              <span>Projected point share</span>
+              <span>{fmt(100 - roundedShare)}%</span>
             </div>
           </div>
         )}
       </section>
 
-      <div style={{ display: "flex", justifyContent: "center" }}>
+      <div className="matchup-date">
         <DayStepper days={days} value={date} onChange={setPicked} today={today}
-          label={(d) => ({ day: weekday(d), date: d === today ? dayShort(d) : monthDay(d) })} />
+          label={(d) => ({ day: weekday(d), date: d === today ? dayShort(d) : monthDay(d) })}
+          status={status} />
+        {!past && <p className="matchup-assumption">Projections use recommended starters on both teams.</p>}
       </div>
 
       <div className="rosters">
@@ -144,6 +159,7 @@ function PastSide({ title, color, date, mine = false }: { title: string; color: 
           <span className="num">{fmt(s.total)}</span>
         </div>
       )}
+      {s.hasSlots && s.hasResults && <SittingOut names={[...s.starters.filter((r) => !r.played), ...s.bench].map((r) => r.player.name)} />}
     </section>
   );
 }
@@ -156,13 +172,14 @@ function Side({ title, color, date, mine = false }: { title: string; color: stri
   const theirs = mine ? sideDay(data, players, date, false) : null;
   const when = date === data.meta.today ? "today" : weekday(date);
   const moves = v?.moves.length ?? 0;
+  const hasStarted = s.rows.some((row) => row.started);
   return (
     <section className="card rows" style={{ padding: "18px 24px 8px" }} aria-label={`${title}, ${when}`}>
       <div className="roster-head">
         <span className="dot" style={{ background: color }} />
         <b>{title}</b>
         <span className="grow" />
-        <span className="section-label">Proj. pts</span>
+        <span className="section-label">{hasStarted ? "Scored / proj. pts" : "Proj. pts"}</span>
       </div>
       {mine && v && moves > 0 && (
         <p className="side-note">
@@ -171,26 +188,25 @@ function Side({ title, color, date, mine = false }: { title: string; color: stri
       )}
       {!s.available && <Empty>Their daily lineup isn&rsquo;t in this snapshot.</Empty>}
       {s.available && s.rows.length === 0 && <Empty>Nobody plays {when}.</Empty>}
-      {s.rows.map(({ player: p, value, scored }) => (
+      {s.rows.map(({ player: p, value, scored, started }) => (
         <div className="row" key={p.id} style={{ padding: "8px 0" }}>
           <Photo p={p} size={40} round />
           <div className="who">
             <div className="who-top">
               <strong>{p.name}</strong>
               {p.injury_status === "DAY_TO_DAY" && <Tag tone="warn">Day-to-day</Tag>}
-              {value == null && <Tag tone="ink">Live</Tag>}
             </div>
             <small>{gameLine(p, date) ?? p.nba_team}</small>
           </div>
-          <div className="proj">
+          <div className={`proj ${started ? "match-actual" : "match-projected"}`}>
             <span className="num" style={{ fontSize: 24 }}>{fmt(value ?? scored)}</span>
-            {value == null && <small style={{ color: "var(--ink)", fontWeight: 600 }}>so far</small>}
+            {hasStarted && <small>{started ? "Scored" : "Proj."}</small>}
           </div>
         </div>
       ))}
       {s.available && (
         <div className="total-row">
-          Total
+          {hasStarted ? "Est. total" : "Total"}
           {theirs?.available && (
             <span className={`edge ${s.total - theirs.total >= 0 ? "up" : "down"}`}>
               {signed(s.total - theirs.total)} vs them
@@ -199,8 +215,13 @@ function Side({ title, color, date, mine = false }: { title: string; color: stri
           <span className="num">{fmt(s.total)}</span>
         </div>
       )}
+      {s.available && <SittingOut names={s.off.map((p) => p.name)} />}
     </section>
   );
+}
+
+function SittingOut({ names }: { names: string[] }) {
+  return names.length ? <p className="match-off"><strong>Sitting out</strong> {names.join(", ")}</p> : null;
 }
 
 function Team({ init, name, sub, color, right }: { init: string; name: string; sub: string; color: string; right?: boolean }) {

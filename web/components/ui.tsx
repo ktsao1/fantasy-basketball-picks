@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import type { Confidence, Player } from "@/lib/types";
 import { headshot, initials } from "@/lib/format";
@@ -53,12 +53,12 @@ export function Meter({ c, label = true }: { c: Confidence; label?: boolean }) {
 }
 
 /** One game: a circle with basketball seams. Filled = a game, empty = none. */
-export function GameIcon({ filled = true, color = "var(--ink)", size = 14 }: { filled?: boolean; color?: string; size?: number }) {
-  const seam = filled ? "#fff" : "var(--muted)";
-  const so = filled ? 0.6 : 0.3;
+export function GameIcon({ filled = true, color = "var(--ink)", size = 14, outline = false }: { filled?: boolean; color?: string; size?: number; outline?: boolean }) {
+  const seam = outline ? "currentColor" : filled ? "#fff" : "var(--muted)";
+  const so = outline ? 1 : filled ? 0.6 : 0.3;
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden>
-      {filled ? <circle cx="12" cy="12" r="11" fill={color} /> : <circle cx="12" cy="12" r="10.3" fill="none" stroke="var(--muted)" strokeOpacity=".5" strokeWidth="1.4" />}
+      {filled && !outline ? <circle cx="12" cy="12" r="11" fill={color} /> : <circle cx="12" cy="12" r="10.3" fill="none" stroke={seam} strokeOpacity={outline ? 1 : 0.5} strokeWidth="1.4" />}
       <g stroke={seam} strokeOpacity={so} strokeWidth="1.4" fill="none">
         <path d="M12 1.2v21.6M1.2 12h21.6" />
         <path d="M4.2 5c3.6 3.4 3.6 10.6 0 14M19.8 5c-3.6 3.4-3.6 10.6 0 14" />
@@ -86,8 +86,9 @@ export function Chevron({ dir }: { dir: "left" | "right" | "up-right" | "down" }
 }
 
 /** Steps through the days of the matchup week, finished ones included. */
-export function DayStepper({ days, value, onChange, today, label }: {
+export function DayStepper({ days, value, onChange, today, label, status }: {
   days: string[]; value: string; onChange: (d: string) => void; today: string; label: (d: string) => { day: string; date: string };
+  status?: string;
 }) {
   const i = days.indexOf(value);
   const l = label(value);
@@ -99,11 +100,22 @@ export function DayStepper({ days, value, onChange, today, label }: {
       <span className="stepper-label" aria-live="polite">
         <strong>{value === today ? "Today" : l.day}</strong>
         <span>{l.date}</span>
+        {status && <Source kind={status === "Final" ? "espn" : "proj"}>{status}</Source>}
       </span>
       <button className="icon-btn" onClick={() => onChange(days[i + 1])} disabled={i >= days.length - 1} aria-label="Next day">
         <Chevron dir="right" />
       </button>
     </div>
+  );
+}
+
+export function InfoPopup({ label, trigger, children }: { label: string; trigger: ReactNode; children: ReactNode }) {
+  const id = useId();
+  return (
+    <>
+      <button type="button" className="popup-trigger" popoverTarget={id} aria-label={label}>{trigger}</button>
+      <div id={id} popover="auto" className="info-popup">{children}</div>
+    </>
   );
 }
 

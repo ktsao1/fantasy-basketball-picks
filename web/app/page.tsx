@@ -6,7 +6,7 @@ import { Card, Chevron, DayStepper, Empty, Photo, Source, Tag, useDay, usePageTi
 import { useData } from "@/lib/data";
 import { dayShort, fmt, lastName, monthDay, weekday } from "@/lib/format";
 import type { Data } from "@/lib/types";
-import { dayView, gameLine, marginWord, pastDay, scenarios, weekDays, type LineupRow, type PastRow } from "@/lib/view";
+import { dayView, gameLine, marginWord, pastDay, weekDays, type LineupRow, type PastRow } from "@/lib/view";
 
 export default function TodayPage() {
   usePageTitle("Today");
@@ -28,45 +28,54 @@ export default function TodayPage() {
   const n = v.moves.length;
   const when = isToday ? "today" : weekday(date);
   const total = (n ? v.withMoves : v.asSet) + v.liveScored;
+  const totalLabel = v.liveCount ? "Estimated lineup points" : "Projected lineup points";
+  const pickup = data.recommendations.pickups[0];
+  const add = pickup && players.get(pickup.add_player_id);
+  const renderRow = (r: LineupRow) => (
+    <Row key={r.player.id} r={r} when={when}
+      dropFor={isToday && add && pickup.drop_player_id === r.player.id ? lastName(add.name) : undefined} />
+  );
 
   return (
-    <div className="stack" style={{ gap: 18 }}>
-      <Stakes data={data} />
-      <div className="cols recs-first">
-        <div className="stack">
-          <section className="band today-band on-dark">
-            <h1 className="band-title">{isToday ? "Your lineup tonight" : `Your lineup ${weekday(date)}`}</h1>
-            <div className="total">
-              <span className="num">{fmt(total)}</span>
-              <span className="band-label">{n ? `Projected pts with ${n === 1 ? "the move" : `the ${n} moves`}` : "Projected pts"}</span>
-            </div>
-          </section>
-
-          <div className="lineup-head">
-            {stepper}
-            <span className="note">As set on ESPN</span>
-            <Source kind="proj">Proj. pts</Source>
-          </div>
-
-          <ul className="card rows" style={{ padding: "6px 14px", margin: 0, listStyle: "none" }} aria-label="Starters">
-            {v.starters.map((r) => <Row key={r.player.id} r={r} when={when} />)}
-          </ul>
-
-          {v.bench.length > 0 && (
-            <>
-              <h2 className="section-label" style={{ marginTop: 6 }}>Bench</h2>
-              <ul className="card rows" style={{ padding: "4px 14px", margin: 0, listStyle: "none" }} aria-label="Bench">
-                {v.bench.map((r) => <Row key={r.player.id} r={r} when={when} />)}
-              </ul>
-            </>
-          )}
+    <div className="today-layout">
+      <div className="today-date">{stepper}</div>
+      <section className="band today-band on-dark">
+        <div className="today-band-copy">
+          <h1 className="band-title">{isToday ? "Your lineup tonight" : `Your lineup ${weekday(date)}`}</h1>
+          <MatchupContext data={data} date={date} />
         </div>
+        <div className="total">
+          <span className="num">{fmt(total)}</span>
+          <span className="band-label">{n ? `${totalLabel} with ${n === 1 ? "1 move" : `${n} moves`}` : totalLabel}</span>
+        </div>
+      </section>
 
-        <div className="stack">
-          <h2 className="page-title">Recommendations</h2>
+      <div className="stack today-recs">
+        <div className="stack today-start">
+          <h2 className="section-label">Recommendations</h2>
           <StartSit v={v} isToday={isToday} onJump={setDate} />
-          <FreeAgency isToday={isToday} />
         </div>
+        <div className="today-agency"><FreeAgency isToday={isToday} /></div>
+      </div>
+
+      <div className="stack today-lineup">
+        <div className="lineup-head">
+          <h2 className="section-label grow">Starters <small className="lineup-source">As set on ESPN</small></h2>
+          <Source kind="proj">{v.liveCount ? "Scored / proj. pts" : "Proj. pts"}</Source>
+        </div>
+
+        <ul className="card rows" style={{ padding: "6px 14px", margin: 0, listStyle: "none" }} aria-label="Starters">
+          {v.starters.map(renderRow)}
+        </ul>
+
+        {v.bench.length > 0 && (
+          <>
+            <h2 className="section-label" style={{ marginTop: 6 }}>Bench</h2>
+            <ul className="card rows" style={{ padding: "4px 14px", margin: 0, listStyle: "none" }} aria-label="Bench">
+              {v.bench.map(renderRow)}
+            </ul>
+          </>
+        )}
       </div>
     </div>
   );
@@ -79,48 +88,27 @@ function PastDayView({ date, today, stepper, onJump }: { date: string; today: st
   const v = pastDay(data.my_team, players, actuals, lineups, date);
   const day = weekday(date);
   return (
-    <div className="stack" style={{ gap: 18 }}>
-      <Stakes data={data} />
-      <div className="cols recs-first">
-        <div className="stack">
-          <section className="band today-band on-dark">
-            <h1 className="band-title">Your lineup {day}</h1>
-            <div className="total">
-              <span className="num">{v.hasResults ? fmt(v.total) : "—"}</span>
-              <span className="band-label">
-                {!v.hasResults ? "Final scores aren’t in yet" : v.hasSlots ? "Pts scored by your starters" : "Pts scored by your roster, bench included"}
-              </span>
-            </div>
-          </section>
-
-          <div className="lineup-head">
-            {stepper}
-            <span className="note">
-              {v.hasSlots ? "As set on ESPN" : "Final"}
-              <span> · {v.played} of {v.starters.length} {v.hasSlots ? "starters played" : "played"}</span>
-            </span>
-            <Source kind="espn">Pts</Source>
-          </div>
-
-          <ul className="card rows" style={{ padding: "6px 14px", margin: 0, listStyle: "none" }} aria-label={v.hasSlots ? "Starters" : `Your roster, ${day}`}>
-            {v.starters.map((r) => <PastRowItem key={r.player.id} r={r} />)}
-          </ul>
-
-          {v.bench.length > 0 && (
-            <>
-              <h2 className="section-label" style={{ marginTop: 6 }}>Bench</h2>
-              <ul className="card rows" style={{ padding: "4px 14px", margin: 0, listStyle: "none" }} aria-label="Bench">
-                {v.bench.map((r) => <PastRowItem key={r.player.id} r={r} />)}
-              </ul>
-            </>
-          )}
+    <div className="today-layout">
+      <div className="today-date">{stepper}</div>
+      <section className="band today-band on-dark">
+        <div className="today-band-copy">
+          <h1 className="band-title">Your lineup {day}</h1>
+          <MatchupContext data={data} date={date} />
         </div>
+        <div className="total">
+          <span className="num">{v.hasResults ? fmt(v.total) : "—"}</span>
+          <span className="band-label">
+            {!v.hasResults ? "Final scores aren’t in yet" : v.hasSlots ? "Pts scored by your starters" : "Pts scored by your roster, bench included"}
+          </span>
+        </div>
+      </section>
 
-        <div className="stack">
-          <h2 className="page-title">Recommendations</h2>
+      <div className="stack today-recs">
+        <div className="stack today-start">
+          <h2 className="section-label">Recommendations</h2>
           <Card title="Start / sit">
-            <p>{day}&rsquo;s games are over, so there&rsquo;s nothing left to set. These are the final points from ESPN.</p>
-            <button className="next-moves" onClick={() => onJump(today)} style={{ marginTop: 12 }}>
+            <p>Lineup changes for {day} are closed.</p>
+            <button className="next-moves" onClick={() => onJump(today)}>
               <span>
                 <b>Back to today</b>
                 <small>See tonight&rsquo;s lineup and moves</small>
@@ -128,8 +116,33 @@ function PastDayView({ date, today, stepper, onJump }: { date: string; today: st
               <Chevron dir="right" />
             </button>
           </Card>
-          <FreeAgency isToday={false} />
         </div>
+        <div className="today-agency"><FreeAgency isToday={false} /></div>
+      </div>
+
+      <div className="stack today-lineup">
+        <div className="lineup-head">
+          <span className="note">
+            {v.hasSlots ? "As set on ESPN" : "Final"}
+            <span> · {v.played} of {v.starters.length} {v.hasSlots ? "starters played" : "played"}</span>
+          </span>
+          <Source kind="espn">Pts</Source>
+        </div>
+
+        {v.hasResults ? (
+          <ul className="card rows" style={{ padding: "6px 14px", margin: 0, listStyle: "none" }} aria-label={v.hasSlots ? "Starters" : `Your roster, ${day}`}>
+            {v.starters.map((r) => <PastRowItem key={r.player.id} r={r} />)}
+          </ul>
+        ) : <Card><Empty>ESPN’s final scores for {day} are unavailable.</Empty></Card>}
+
+        {v.hasResults && v.bench.length > 0 && (
+          <>
+            <h2 className="section-label" style={{ marginTop: 6 }}>Bench</h2>
+            <ul className="card rows" style={{ padding: "4px 14px", margin: 0, listStyle: "none" }} aria-label="Bench">
+              {v.bench.map((r) => <PastRowItem key={r.player.id} r={r} />)}
+            </ul>
+          </>
+        )}
       </div>
     </div>
   );
@@ -154,53 +167,28 @@ function PastRowItem({ r }: { r: PastRow }) {
   );
 }
 
-/**
- * The week's stakes, first: where the matchup stands, and how the recommendations change the
- * projected finish (as set on ESPN → with the moves → with the top add too).
- */
-function Stakes({ data }: { data: Data }) {
-  const { players } = useData();
-  const path = scenarios(data, players);
-  if (!path || !data.opponent) return null;
-  const m = data.matchup;
-  const now = (m.my_score ?? 0) - (m.opponent_score ?? 0);
-  const cap = (t: string) => t[0].toUpperCase() + t.slice(1);
-  const moves = path.find((x) => x.plan === "moves")!;
-  const add = path.find((x) => x.plan === "add");
-  const top = data.recommendations.pickups[0];
-  const addName = top ? players.get(top.add_player_id)?.name : undefined;
-  const headline =
-    add && addName && moves.margin < 0 && add.margin > 0 ? `Add ${addName} and you’re projected to win.`
-      : moves.margin > 0 ? `Projected to win by ${Math.round(moves.margin)}.`
-        : `Projected to finish ${marginWord(moves.margin)}.`;
+function MatchupContext({ data, date }: { data: Data; date: string }) {
+  if (!data.opponent || data.matchup.is_bye) return null;
+  const { my_score: mine, opponent_score: theirs } = data.matchup;
+  const daysLeft = weekDays(data).filter((day) => day >= data.meta.today).length;
+  const margin = mine == null || theirs == null ? null : marginWord(mine - theirs);
   return (
-    <section className="stakes" aria-label="This week">
-      <div className="stakes-head">
-        <p className="stakes-now"><b>{cap(marginWord(now))}</b> vs {data.opponent.name} with {data.meta.matchup_days.length - Math.max(0, data.meta.matchup_days.indexOf(data.meta.today))} days left</p>
-        <h2 className="stakes-title">{headline}</h2>
-      </div>
-      <ol className="path" aria-label="Projected finish">
-        {path.map((x) => (
-          <li key={x.plan} className={`step${x.margin > 0 ? " win" : ""}`}>
-            <Link href="/matchup">
-              <small>{x.label}</small>
-              <span className="num">{cap(marginWord(x.margin))}</span>
-              {x.win != null && <span className="pct">{Math.round(x.win * 100)}% to win</span>}
-            </Link>
-          </li>
-        ))}
-      </ol>
-    </section>
+    <>
+      {date === data.meta.today && margin && (
+        <p className="today-margin"><b className={margin.startsWith("down") ? "behind" : undefined}>{margin[0].toUpperCase() + margin.slice(1)}</b> vs {data.opponent.name} with {daysLeft} {daysLeft === 1 ? "day" : "days"} left</p>
+      )}
+      <Link className="today-matchup-link" href={date === data.meta.today ? "/matchup" : `/matchup?day=${date}`}>View matchup <span aria-hidden>→</span></Link>
+    </>
   );
 }
 
-function Row({ r, when }: { r: LineupRow; when: string }) {
+function Row({ r, when, dropFor }: { r: LineupRow; when: string; dropFor?: string }) {
   const p = r.player;
   const dim = r.state === "idle" || r.state === "out";
   const line = r.game ? gameLine(p, r.game.date) : r.state === "out" ? `${p.nba_team} · Injured` : `${p.nba_team} · No game ${when}`;
   const m = r.replacedBy;
   return (
-    <li className={`row${m ? " rec" : ""}${dim ? " dim" : ""}`}>
+    <li className={`row${m || dropFor ? " rec" : ""}${dim ? " dim" : ""}`}>
       <span className="slot" aria-label={`Slot ${r.slot}`}>{r.slot}</span>
       <Photo p={p} size={40} round dim={dim} />
       <div className="who">
@@ -209,6 +197,7 @@ function Row({ r, when }: { r: LineupRow; when: string }) {
           {r.state === "out" && <Tag tone="neg">Out</Tag>}
           {r.state !== "out" && p.injury_status === "DAY_TO_DAY" && <Tag tone="warn">Day-to-day</Tag>}
           {r.startAt && <Tag tone="rec">Start at {r.startAt}</Tag>}
+          {dropFor && <Tag tone="rec">Drop for {dropFor}</Tag>}
           {r.state === "live" && <Tag tone="ink">Live</Tag>}
         </div>
         <small>{line}</small>

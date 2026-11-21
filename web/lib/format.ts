@@ -76,10 +76,9 @@ export function headshot(id: number): string {
   return `https://a.espncdn.com/combiner/i?img=/i/headshots/nba/players/full/${id}.png&w=350&h=254`;
 }
 
-/** Tip-off in Eastern time, "7:30 PM", or "TBD". */
+/** Tip-off in Eastern time or "TBD". */
 export function tip(startUtc: string | null | undefined): string {
-  if (!startUtc) return "TBD";
-  return new Date(startUtc).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" });
+  return startUtc ? `${clock(startUtc)} ET` : "TBD";
 }
 
 /** "Fri, Nov 20" from an ISO calendar date. */

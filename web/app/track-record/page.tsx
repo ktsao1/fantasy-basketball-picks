@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { Empty, Photo, Source, Tag, usePageTitle } from "@/components/ui";
+import { useId, useRef, useState } from "react";
+import { Chevron, Empty, Photo, Tag, useDay, usePageTitle } from "@/components/ui";
 import { useData, useTrackRecord } from "@/lib/data";
-import { fmt, signed, weekday } from "@/lib/format";
+import { dayShort, fmt, signed, weekday } from "@/lib/format";
 import type { Call, TrackRecord } from "@/lib/types";
 
 export default function TrackRecordPage() {
@@ -26,28 +27,27 @@ function Record({ r }: { r: TrackRecord }) {
   const graded = r.calls.filter((c) => c.actual != null);
   const pending = r.calls.filter((c) => c.actual == null && (c.status ?? "pending") === "pending");
   const noScore = r.calls.filter((c) => c.status === "no_score");
-  const days = [...new Set(graded.map((c) => c.date))].sort().reverse();
+  const days = [...new Set([...graded, ...noScore].map((c) => c.date))].sort().reverse();
+  const [date, setDate] = useDay(days);
+  const selected = graded.filter((call) => call.date === date);
+  const ungraded = noScore.filter((call) => call.date === date);
   const pendingDays = [...new Set(pending.map((c) => c.date))].sort();
   // One scale for every row, so ranges and misses compare at a glance.
-  const max = Math.ceil(Math.max(...r.calls.map((c) => Math.max(c.range[1], c.actual ?? 0)), 10) / 10) * 10;
-  const share = s.graded ? s.within_range / s.graded : 0;
+  const max = Math.ceil(Math.max(...graded.map((c) => Math.max(c.range[1], c.actual!, c.projected)), 10) / 10) * 10;
+  const min = Math.floor(Math.min(...graded.map((c) => Math.min(c.range[0], c.actual!, c.projected)), 0) / 10) * 10;
+  const coverage = s.graded ? `${Math.round(100 * s.within_range / s.graded)}%` : "—";
 
   return (
     <div className="stack" style={{ gap: 24 }}>
       <section className="band tr-band on-dark" aria-label="Summary">
         <div className="tr-head">
-          <h1 className="band-title">
-            {s.graded ? `${s.within_range} of ${s.graded} start calls landed inside their 80% range.` : "Nothing graded yet."}
-          </h1>
-          <p className="band-sub">
-            {s.days_graded.length} day{s.days_graded.length === 1 ? "" : "s"} graded so far, from {r.snapshots} saved pulls.
-            {s.graded < 30 && " Too few to measure the engine yet; it grows every game day."}
-          </p>
+          <h1 className="band-title">Track record</h1>
+          <p className="band-sub">{s.graded ? `${s.graded} calls graded across ${s.days_graded.length} ${s.days_graded.length === 1 ? "day" : "days"}` : "Nothing graded yet"}</p>
         </div>
         <dl className="tr-stats">
           <div>
-            <dt>Inside the range</dt>
-            <dd><span className="num">{Math.round(share * 100)}%</span><small>target 80%</small></dd>
+            <dt>Inside the 80% range</dt>
+            <dd><span className="num">{coverage}</span><small>{s.graded ? `${s.within_range} of ${s.graded} calls` : "Awaiting results"}</small></dd>
           </div>
           <div>
             <dt>Average miss</dt>
@@ -55,29 +55,28 @@ function Record({ r }: { r: TrackRecord }) {
           </div>
           <div>
             <dt>Projected vs scored</dt>
-            <dd><span className="num">{fmt(s.projected_total, 0)} / {fmt(s.actual_total, 0)}</span><small>{s.bias != null ? `${signed(s.bias)} pts per player on average` : ""}</small></dd>
+            <dd><span className="num">{s.graded ? `${fmt(s.projected_total, 0)} / ${fmt(s.actual_total, 0)}` : "—"}</span><small>{s.bias != null ? `Actual − projected: ${signed(s.bias)} pts/player` : ""}</small></dd>
           </div>
         </dl>
       </section>
 
-      <div className="tr-legend" aria-hidden>
-        <span><i className="lg-range hatch" /> 80% range</span>
-        <span><i className="lg-proj" /> Projection</span>
-        <span><i className="lg-actual" /> Actual (ESPN)</span>
-      </div>
-
-      {days.map((d) => (
-        <section className="card rows tr-day" key={d} aria-label={`${weekday(d)} calls`}>
+      {date && (
+        <section className="card rows tr-day" aria-label={`${dayShort(date)} calls`}>
           <div className="roster-head">
-            <b>{weekday(d)}</b>
-            <span className="muted" style={{ fontSize: 13 }}>{dayLine(graded.filter((c) => c.date === d))}</span>
-            <span className="grow" />
-            <Source kind="proj">Proj.</Source>
-            <Source kind="espn">Actual</Source>
+            <RecordCalendar dates={days} date={date} onChange={setDate} />
+            {selected.length > 0 && <span className="muted" style={{ fontSize: 13 }} aria-live="polite">{dayLine(selected)}</span>}
           </div>
-          {graded.filter((c) => c.date === d).map((c) => <CallRow key={`${c.date}-${c.player_id}`} c={c} max={max} />)}
+          {selected.length ? selected.map((c) => <CallRow key={`${c.date}-${c.player_id}`} c={c} min={min} max={max} />)
+            : <Empty>No calls could be graded for this day.</Empty>}
+          {selected.length > 0 && (
+            <div className="tr-legend" aria-hidden>
+              <span><i className="lg-range hatch" /> 80% range</span>
+              <span><i className="lg-proj" /> Projection</span>
+              <span><i className="lg-actual" /> Actual (ESPN)</span>
+            </div>
+          )}
         </section>
-      ))}
+      )}
 
       {pendingDays.length > 0 && (
         <section className="card" aria-label="Waiting on games">
@@ -97,10 +96,9 @@ function Record({ r }: { r: TrackRecord }) {
         </section>
       )}
 
-      {noScore.length > 0 && (
+      {ungraded.length > 0 && (
         <p className="muted" style={{ fontSize: 12 }}>
-          Not graded: {noScore.map((c) => `${c.name} (${weekday(c.date)})`).join(", ")}. ESPN has no box score for{" "}
-          {noScore.length === 1 ? "him" : "them"} that day, usually because he left the roster or didn&rsquo;t play.
+          ESPN has no box score for {ungraded.map((c) => c.name).join(", ")} that day.
         </p>
       )}
 
@@ -117,18 +115,61 @@ function Record({ r }: { r: TrackRecord }) {
   );
 }
 
+function RecordCalendar({ dates, date, onChange }: { dates: string[]; date: string; onChange: (date: string) => void }) {
+  const id = useId();
+  const popup = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const [browsing, setBrowsing] = useState<string | null>(null);
+  const months = [...new Set(dates.map((d) => d.slice(0, 7)))].sort();
+  const month = browsing ?? date.slice(0, 7);
+  const index = months.indexOf(month);
+  const [year, number] = month.split("-").map(Number);
+  const first = new Date(year, number - 1, 1);
+  const offset = first.getDay();
+  const length = new Date(year, number, 0).getDate();
+  return (
+    <>
+      <button type="button" ref={trigger} className="record-date popup-trigger" popoverTarget={id} onClick={() => setBrowsing(null)} aria-label={`Choose record date, ${dayShort(date)}`}>
+        {dayShort(date)} <Chevron dir="down" />
+      </button>
+      <div id={id} ref={popup} popover="auto" className="info-popup record-calendar" aria-label="Recorded dates">
+        <div className="calendar-head">
+          <button className="icon-btn" type="button" disabled={index <= 0} onClick={() => setBrowsing(months[index - 1])} aria-label="Previous recorded month"><Chevron dir="left" /></button>
+          <strong aria-live="polite">{first.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</strong>
+          <button className="icon-btn" type="button" disabled={index >= months.length - 1} onClick={() => setBrowsing(months[index + 1])} aria-label="Next recorded month"><Chevron dir="right" /></button>
+        </div>
+        <div className="calendar-days">
+          {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((day) => <small key={day} aria-hidden>{day}</small>)}
+          {Array.from({ length: offset }, (_, i) => <span key={`offset-${i}`} aria-hidden />)}
+          {Array.from({ length }, (_, i) => {
+            const d = `${month}-${String(i + 1).padStart(2, "0")}`;
+            return (
+              <button key={d} type="button" disabled={!dates.includes(d)} aria-current={d === date ? "date" : undefined}
+                aria-label={dayShort(d)} onClick={() => {
+                  onChange(d);
+                  popup.current?.hidePopover();
+                  trigger.current?.focus();
+                }}>{i + 1}</button>
+            );
+          })}
+        </div>
+      </div>
+    </>
+  );
+}
+
 function dayLine(cs: Call[]): string {
   const proj = cs.reduce((t, c) => t + c.projected, 0);
   const act = cs.reduce((t, c) => t + (c.actual ?? 0), 0);
   return `${cs.length} starters · projected ${fmt(proj, 0)}, scored ${fmt(act, 0)}`;
 }
 
-function CallRow({ c, max }: { c: Call; max: number }) {
+function CallRow({ c, min, max }: { c: Call; min: number; max: number }) {
   const { players } = useData();
   const p = players.get(c.player_id) ?? { id: c.player_id, name: c.name };
   const a = c.actual!;
   const inside = a >= c.range[0] && a <= c.range[1];
-  const pct = (v: number) => `${Math.min(100, Math.max(0, (v / max) * 100))}%`;
+  const pct = (v: number) => `${((v - min) / (max - min)) * 100}%`;
   const miss = a - c.projected;
   return (
     <div className="row tr-row">
@@ -141,7 +182,7 @@ function CallRow({ c, max }: { c: Call; max: number }) {
         </div>
         <small>{c.nba_team}</small>
       </div>
-      <div className="tr-strip" role="img" aria-label={`Projected ${fmt(c.projected)}, range ${fmt(c.range[0], 0)} to ${fmt(c.range[1], 0)}, scored ${fmt(a)}`}>
+      <div className="tr-strip" role="img" aria-label={`Projected ${fmt(c.projected)}, range ${fmt(c.range[0])} to ${fmt(c.range[1])}, scored ${fmt(a)}`}>
         <span className="tr-base" />
         <span className="tr-range hatch" style={{ left: pct(c.range[0]), width: `calc(${pct(c.range[1])} - ${pct(c.range[0])})` }} />
         <span className="tr-proj" style={{ left: pct(c.projected) }} />

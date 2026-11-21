@@ -24,9 +24,15 @@ export default function HowItWorks() {
       <header className="doc-head">
         <h1>How it works</h1>
         <p className="doc-lede">
-          Fantasy Picks reads one ESPN fantasy basketball league a few times a day and recommends who to start and
-          which free agent to add. It never changes anything on ESPN. You make every move yourself.
+          Fantasy Picks uses your ESPN league data to recommend who to start and which free agents to add.
+          You make each move yourself on ESPN.
         </p>
+        <nav className="doc-jump" aria-label="On this page">
+          <a href="#proj">Projections</a>
+          <a href="#lineup">Lineup picks</a>
+          <a href="#fa">Free-agent Value</a>
+          {items.length > 0 && <a href="#scoring">League scoring</a>}
+        </nav>
       </header>
 
       <section className="doc-sec" aria-labelledby="flow">
@@ -35,8 +41,7 @@ export default function HowItWorks() {
         <p>
           A scheduled job pulls the league from ESPN four times a day: after the night&rsquo;s games, after the morning
           injury news, and before afternoon and evening tip-offs. The engine turns that pull into
-          recommendations and saves them as a file in the project&rsquo;s repository. This site reads that file, so it
-          needs no server or database. The last pull was{" "}
+          recommendations and saves them in a file the dashboard reads. The last pull was{" "}
           {new Date(data.meta.updated_at).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/New_York" })}{" "}
           ET.
         </p>
@@ -64,10 +69,11 @@ export default function HowItWorks() {
           <li><b>Thin samples:</b> a season average counts fully only after 8 games, and the last 15 days need at least 3.</li>
         </ul>
         <p>Then each game is multiplied by the chance he plays, from his ESPN injury status:</p>
-        <table className="doc-table">
-          <thead><tr><th scope="col">Status</th>{AVAILABILITY.map(([s]) => <th key={s} scope="col">{s}</th>)}</tr></thead>
-          <tbody><tr><th scope="row">Chance he plays</th>{AVAILABILITY.map(([s, v]) => <td key={s} className="num">{v}%</td>)}</tr></tbody>
-        </table>
+        <dl className="availability" aria-label="Chance of playing by injury status">
+          {AVAILABILITY.map(([status, chance]) => (
+            <div key={status}><dt>{status}</dt><dd className="num">{chance}%</dd></div>
+          ))}
+        </dl>
       </section>
 
       <section className="doc-sec" aria-labelledby="lineup">
@@ -83,8 +89,8 @@ export default function HowItWorks() {
       <section className="doc-sec" aria-labelledby="fa">
         <h2 id="fa">Ranking free agents</h2>
         <p>
-          For the 30 best free agents, the engine tries swapping each one for each of your 5 weakest players. It never
-          drops someone who projects higher per game, and it keeps you at 4 centers or fewer. Each swap gets two numbers:
+          The engine evaluates every tracked free agent against your five weakest players eligible to drop. It only
+          considers drops with lower projected points per game and keeps you at four centers or fewer. Each swap gets two numbers:
         </p>
         <ul className="doc-list">
           <li><b>Gain this week:</b> your best lineups with the swap minus without it, counted from the day an add takes effect. Waiver claims take a day longer.</li>
@@ -94,9 +100,8 @@ export default function HowItWorks() {
           <span>Value</span> = gain this week + rest of season ÷ <span className="num">{weeksLeft(data)}</span> weeks left
         </p>
         <p>
-          The value is what the ranking sorts by: this week plus a typical later week. That is why a player with a big week
-          but little long-term upside can rank below one with a smaller week. Only one add a day is allowed, so the top 5
-          are alternatives, not a shopping list.
+          The ranking uses the best eligible swap for each player with a Value of at least 1 point. The free-agent table
+          shows every qualifying swap. Today shows the five highest-ranked options for your one add per day.
         </p>
       </section>
 
@@ -149,7 +154,7 @@ function Flow() {
     { t: "Scheduled job", s: "4× a day" },
     { t: "Engine", s: "Python" },
     { t: "JSON file", s: "In the repo" },
-    { t: "This site", s: "Static" },
+    { t: "Dashboard", s: "Recommendations" },
   ];
   return (
     <ol className="flow" aria-label="Data flow">
