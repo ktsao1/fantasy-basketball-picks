@@ -50,7 +50,7 @@ export default function MatchupPage() {
       <h1 className="sr-only">Matchup</h1>
       <section className="score-band on-dark" aria-label="Score">
         <div className="teams">
-          <Team init={initialsOf(me.name)} name={me.name} sub={`You · ${me.wins}–${me.losses}${me.standing ? ` · ${ordinal(me.standing)}` : ""}`} color="var(--accent-on-dark)" />
+          <Team init="YT" name="Your Team" sub={`${me.wins}–${me.losses}${me.standing ? ` · ${ordinal(me.standing)}` : ""}`} color="var(--accent-on-dark)" />
           <span className="pill-week">Week {m.matchup_period} · {days.length - score.through + Number(date === today)} days left</span>
           <Team init={initialsOf(opp.name)} name={opp.name} sub={`${opp.wins}–${opp.losses}${opp.standing ? ` · ${ordinal(opp.standing)}` : ""}`} color="var(--opp-on-dark)" right />
         </div>
