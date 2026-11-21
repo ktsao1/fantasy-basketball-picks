@@ -28,6 +28,15 @@ export type Team = {
 
 export type TeamSummary = Omit<Team, "roster"> & { is_mine: boolean };
 
+export type WeekGame = {
+  date: string;
+  opponent: string | null;
+  home: boolean;
+  /** Tip-off as an ISO instant, or null when ESPN lists the time as TBD. */
+  start_utc: string | null;
+  started: boolean;
+};
+
 export type Player = {
   id: number;
   name: string;
@@ -43,6 +52,8 @@ export type Player = {
   projection: { espn: StatLine | null; engine_fpts_per_game?: number | null; engine_week_fpts?: number | null };
   games_left_this_week: number;
   game_dates_left?: string[];
+  /** This matchup week's games for his NBA team, played or not (pipeline ≥ engine 1.2). */
+  week_games?: WeekGame[];
   back_to_back_dates?: string[];
   game_today_locked?: boolean;
   games_left_season?: number;
@@ -84,6 +95,8 @@ export type Change = {
   player_id: number;
   from_slot?: string | null;
   to_slot?: string | null;
+  /** For a start: the player whose slot he takes (engine ≥ 1.2). */
+  replaces?: number | null;
   reason: string;
   confidence: Confidence;
   factors?: Factor[];
@@ -100,6 +113,8 @@ export type Pickup = {
   factors?: Factor[];
 };
 
+export type OpponentSlot = { date: string; slot: string; player_id: number | null; projected_fpts: number | null };
+
 export type Projected = {
   mine: number | null;
   opponent: number | null;
@@ -115,6 +130,7 @@ export type Data = {
     updated_at: string;
     season: number;
     scoring_type: string;
+    scoring_items?: { stat: string; points: number }[];
     roster_slots: Record<string, number>;
     lineup_lock: string | null;
     matchup_period: number;
@@ -139,6 +155,10 @@ export type Data = {
     engine_version: string;
     lineup: LineupSlot[];
     changes: Change[];
+    /** Changes vs. the lineup set on ESPN for each remaining day (engine ≥ 1.2). */
+    changes_by_day?: Record<string, Change[]>;
+    /** The opponent's best lineup for each remaining day (engine ≥ 1.2). */
+    opponent_lineup?: OpponentSlot[];
     pickups: Pickup[];
     matchup_projection?: Projected;
   };

@@ -70,3 +70,48 @@ const UNAVAILABLE = new Set(["OUT", "INJURY_RESERVE", "SUSPENSION"]);
 export function unavailable(p: Player): boolean {
   return UNAVAILABLE.has(p.injury_status ?? "");
 }
+
+/** ESPN's CDN headshot for a player id (the pipeline uses ESPN ids). */
+export function headshot(id: number): string {
+  return `https://a.espncdn.com/combiner/i?img=/i/headshots/nba/players/full/${id}.png&w=350&h=254`;
+}
+
+/** Tip-off in Eastern time, "7:30 PM", or "TBD". */
+export function tip(startUtc: string | null | undefined): string {
+  if (!startUtc) return "TBD";
+  return new Date(startUtc).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" });
+}
+
+/** "Fri, Nov 20" from an ISO calendar date. */
+export function dayShort(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+}
+
+/** "Saturday" from an ISO calendar date. */
+export function weekday(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", { weekday: "long" });
+}
+
+/** "Nov 21" from an ISO calendar date. */
+export function monthDay(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+/** "3:46 PM" in Eastern time. */
+export function clock(iso: string): string {
+  return new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" });
+}
+
+export function initials(name: string): string {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+}
+
+/** Short last name for compact labels: "Smith Jr.", "LeBron" stays "James". */
+export function lastName(name: string): string {
+  const parts = name.split(/\s+/);
+  const last = parts[parts.length - 1];
+  return /^(Jr\.?|Sr\.?|II|III|IV)$/.test(last) && parts.length > 2 ? `${parts[parts.length - 2]} ${last}` : last;
+}

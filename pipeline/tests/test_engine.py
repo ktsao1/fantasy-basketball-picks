@@ -122,3 +122,29 @@ class ExplanationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DailyViewTests(unittest.TestCase):
+    """Per-day output the Today and Matchup pages step through (engine 1.2)."""
+
+    def test_changes_for_a_later_day(self):
+        # Starter plays day 1 only; the bench player plays day 2 only, so day 2 needs a swap.
+        ps = [player(1, "DayOne", 40, ["PG"], dates=("2026-11-21",)),
+              player(2, "DayTwo", 30, ["PG"], dates=("2026-11-22",)), player(3, "Big", 30, ["C"])]
+        roster = [{"player_id": 1, "lineup_slot": "PG"}, {"player_id": 2, "lineup_slot": "BE"},
+                  {"player_id": 3, "lineup_slot": "C"}]
+        recs = recommend(league(ps, roster))
+        self.assertEqual(recs["changes"], recs["changes_by_day"]["2026-11-21"])
+        later = {(c["action"], c["player_id"]) for c in recs["changes_by_day"]["2026-11-22"]}
+        self.assertIn(("start", 2), later)
+
+    def test_opponent_lineup_per_day(self):
+        mine = [player(1, "A", 40, ["PG"]), player(2, "B", 40, ["C"])]
+        theirs = [player(5, "X", 20, ["PG"], owner=3), player(6, "Y", 25, ["C"], owner=3)]
+        data = league(mine + theirs, [{"player_id": 1, "lineup_slot": "PG"}, {"player_id": 2, "lineup_slot": "C"}])
+        data["opponent"] = {"roster": [{"player_id": 5, "lineup_slot": "PG"}, {"player_id": 6, "lineup_slot": "C"}]}
+        data["matchup"]["opponent_score"] = 0
+        opp = recommend(data)["opponent_lineup"]
+        starters = {e["player_id"]: e["projected_fpts"] for e in opp if e["player_id"] is not None}
+        self.assertEqual(starters, {5: 20.0, 6: 25.0})
+        self.assertTrue(all(e["date"] == "2026-11-21" for e in opp))

@@ -269,6 +269,13 @@
         },
         "factors": {
           "$ref": "#/$defs/factors"
+        },
+        "replaces": {
+          "description": "for a start: the player whose slot he takes, or null for an open slot",
+          "type": [
+            "integer",
+            "null"
+          ]
         }
       }
     },
@@ -618,7 +625,8 @@
           "back_to_back_dates",
           "game_today_locked",
           "games_left_season",
-          "primary_position"
+          "primary_position",
+          "week_games"
         ],
         "additionalProperties": false,
         "properties": {
@@ -740,6 +748,45 @@
           },
           "primary_position": {
             "type": "string"
+          },
+          "week_games": {
+            "description": "this matchup week's games for his NBA team, played or not, with opponent and tip time",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "date",
+                "opponent",
+                "home",
+                "start_utc",
+                "started"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "date": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "opponent": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "home": {
+                  "type": "boolean"
+                },
+                "start_utc": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "started": {
+                  "type": "boolean"
+                }
+              }
+            }
           }
         }
       }
@@ -751,7 +798,9 @@
         "lineup",
         "changes",
         "pickups",
-        "matchup_projection"
+        "matchup_projection",
+        "changes_by_day",
+        "opponent_lineup"
       ],
       "additionalProperties": false,
       "properties": {
@@ -778,6 +827,48 @@
         },
         "matchup_projection": {
           "$ref": "#/$defs/matchupProjection"
+        },
+        "changes_by_day": {
+          "description": "changes vs. the lineup set on ESPN, for each remaining day",
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/change"
+            }
+          }
+        },
+        "opponent_lineup": {
+          "description": "the opponent's best lineup for each remaining day",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "date",
+              "slot",
+              "player_id",
+              "projected_fpts"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "date": {
+                "type": "string",
+                "format": "date"
+              },
+              "slot": {
+                "type": "string"
+              },
+              "player_id": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "projected_fpts": {
+                "$ref": "#/$defs/nullableNumber"
+              }
+            }
+          }
         }
       }
     }

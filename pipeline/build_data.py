@@ -90,6 +90,7 @@ def build(snap: dict[str, Any], anonymize: bool, now: datetime) -> dict[str, Any
     team_dates: dict[str, set[str]] = {}       # every game date, for back-to-back detection
     season_left: dict[str, int] = {}           # games not yet started, rest of season
     locked_today: set[str] = set()             # teams whose game today has tipped off
+    week_games: dict[str, list[dict[str, Any]]] = {}  # this matchup week's games, with opponent and tip time
     first_tip_today: str | None = None
     for g in snap["pro_games"]:
         started = g["start_utc"] <= now_iso
@@ -103,6 +104,11 @@ def build(snap: dict[str, Any], anonymize: bool, now: datetime) -> dict[str, Any
             first_tip_today = min(first_tip_today or g["start_utc"], g["start_utc"])
         if g["scoring_period"] in week_days:
             day_dates.setdefault(g["scoring_period"], g["game_date"])
+            for team, opp, home in ((g["home_team"], g["away_team"], True), (g["away_team"], g["home_team"], False)):
+                week_games.setdefault(team, []).append({
+                    "date": g["game_date"], "opponent": opp, "home": home,
+                    "start_utc": None if g["time_tbd"] else g["start_utc"], "started": started,
+                })
             if not started:
                 for team in (g["home_team"], g["away_team"]):
                     dates_left.setdefault(team, []).append(g["game_date"])
@@ -151,6 +157,7 @@ def build(snap: dict[str, Any], anonymize: bool, now: datetime) -> dict[str, Any
                 },
                 "games_left_this_week": len(dates_left.get(p["pro_team"], [])),
                 "game_dates_left": sorted(dates_left.get(p["pro_team"], [])),
+                "week_games": sorted(week_games.get(p["pro_team"], []), key=lambda g: g["date"]),
                 "back_to_back_dates": back_to_backs(p["pro_team"]),
                 "game_today_locked": p["pro_team"] in locked_today,
                 "games_left_season": season_left.get(p["pro_team"], 0),

@@ -169,11 +169,16 @@ requirements.txt, .env.example, .gitignore
   - Pickups have `gain_this_week_range`. `matchup_projection` has `mine_range`, `opponent_range` and `win_probability`.
   - Ranges are 80% intervals from each player's game-to-game variance (a hand-set coefficient of variation of 0.35, plus the chance he sits) and assume independent games.
   - Snapshots from engine 1.0 don't have these fields, so the web types treat them as optional.
+- **Engine 1.2 (2026-11-20): per-day views for the Figma design.**
+  - `changes_by_day`: changes vs. the lineup set on ESPN for every remaining day, not just the first. ESPN carries the lineup forward, so each day is diffed against it. `changes` stays as the first day's list.
+  - A `start` change names the player it `replaces` (null for an open slot), so the dashboard can put the move on that player's row.
+  - `opponent_lineup`: the opponent's best lineup for each remaining day, with per-player projections (null once a game has started).
+  - Each player has `week_games`: this week's games for his NBA team, with opponent, home/away, tip time and whether it has started.
 
 ## Phase 3: Dashboard on Vercel
 
 1. Kevin provides Figma designs. Until then, build functional, unstyled views.
-2. Four views: **Today** (recommended lineup and changes from what's set), **Matchup** (projection vs. this week's opponent), **Free agents** (ranked, filterable by position), **Opponent** (roster and games left).
+2. Views: **Today** (the lineup as set on ESPN, with the recommended moves for the chosen day), **Matchup** (score now vs. projected final, and both sides' starters for the chosen day), **Free agents** (ranked, filterable by position) with a **detail page** per free agent. Opponent was dropped on 2026-11-20; Matchup covers the opponent's roster.
 3. **Live / Replay toggle.** Replay steps through the curated snapshots in `data/snapshots/featured.json`: 3–5 entries, each with a title and a one-line description of why it's interesting.
 4. **"Last updated"** on every page. If the data is more than 24 hours old, show a banner and default to Replay.
 5. Every recommendation shows its reason and confidence.
@@ -181,14 +186,22 @@ requirements.txt, .env.example, .gitignore
 
 **Done when:** someone with only the link understands it and clicks through in under 2 minutes.
 
-**Status: live, unstyled, 2026-11-20.** https://fantasy-basketball-picks.vercel.app
+**Status: live, 2026-11-20.** https://fantasy-basketball-picks.vercel.app
 - **Hosting:** Vercel project `fantasy-basketball-picks`, Root Directory `web/`. Each push, including the pipeline's data commits, redeploys the site.
 - **Data loading:** `web/scripts/copy-data.mjs` runs before `dev` and `build`. It copies `data/latest.json`, `featured.json` and the featured snapshots into `public/data/`, and the browser fetches them.
 - **Built:** all four views, Live/Replay, "Last updated", a stale banner that defaults to Replay after 24 hours, and reason + confidence on every recommendation. Checked locally (including stale data and phone width) and on the live site.
 - **Config:** the scaffold's `cacheComponents` and `partialPrefetching` are off. With them on, the page never loaded in the browser.
+- **Figma design applied, 2026-11-20** (the Broadcast scoreboard direction; Figma file `yxwRvaZ4hJnDubCXP8K1rA`, Section 2).
+  - **Styling:** a dark header, Inter for text, Barlow Condensed for numbers, and player headshots from ESPN's CDN by player id.
+  - **Three data layers, kept visually distinct:** actual (ESPN) is solid with an ESPN tag, projected is striped with a Projected tag, and recommended is blue.
+  - **Today and Matchup** each have a date stepper over the remaining days.
+  - **Free-agent detail page** (`/free-agents/[id]`), in three parts:
+    - **Verdict:** the gain with its 80% range.
+    - **Reasons:** ranked drivers that add up to the gain, plus supporting signals.
+    - **Evidence:** a points breakdown using the league's scoring, the add vs. drop table, form by time window, and confidence.
+  - Checked at desktop and 375px widths with no horizontal overflow.
 - **Still open:**
-  - Curate 3–5 Replay snapshots, including a day with real lineup changes. Only one real snapshot exists so far.
-  - Apply Kevin's Figma designs.
+  - Curate 3–5 Replay snapshots, including a day with real lineup changes (Saturday 2026-11-21 needs three).
 
 ## Phase 4: Accuracy + presentation polish
 

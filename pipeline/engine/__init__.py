@@ -16,7 +16,7 @@ from .lineup import BENCH_SLOTS, best_day, labels, starting_slots
 from .pickups import recommend_pickups
 from .projection import RANGE_Z, availability, expected_on, project_all, variance_on
 
-ENGINE_VERSION = "1.1"
+ENGINE_VERSION = "1.2"
 
 
 def _context(p: dict[str, Any], proj, date: str) -> list[str]:
@@ -75,10 +75,11 @@ def recommend(data: dict[str, Any]) -> dict[str, Any]:
                                "factors": factors.signals(p, proj, d)})
 
     # --- changes vs. the lineup set on ESPN (first remaining day only) --------
-    changes = []
-    if day_lineups:
-        first = day_lineups[0]
-        current = {r["player_id"]: r["lineup_slot"] for r in my_roster}
+    # ESPN carries the lineup as set forward to later days, so every day is diffed against it.
+    current = {r["player_id"]: r["lineup_slot"] for r in my_roster}
+
+    def changes_for(first) -> list[dict[str, Any]]:
+        changes: list[dict[str, Any]] = []
         rec_slot = {pid: label for label, pid in first.assignment.items() if pid is not None}
         starters_now = {pid for pid, s in current.items() if s and s not in BENCH_SLOTS and pid in players}
         to_start = sorted((pid for pid in rec_slot if pid not in starters_now and pid not in first.locked.values()),
@@ -111,6 +112,7 @@ def recommend(data: dict[str, Any]) -> dict[str, Any]:
                 replaces = f" at {slot} over {out['name']} ({out_v:.1f} proj)"
             changes.append({
                 "action": "start", "player_id": pid, "from_slot": current.get(pid), "to_slot": slot,
+                "replaces": out["id"] if out else None,
                 "reason": f"Start {p['name']} ({v:.1f} proj){replaces}.",
                 "confidence": confidence.for_choice([(p, proj)], margin),
                 "factors": factors.for_start(p, proj, v, out, out_v, why, slot, first.date),
@@ -133,6 +135,10 @@ def recommend(data: dict[str, Any]) -> dict[str, Any]:
                     "confidence": {"level": "high", "basis": "slot eligibility"},
                     "factors": [factors.factor("slot", f"only {slot} is open for him after the other changes")],
                 })
+        return changes
+
+    changes_by_day = {d.date: changes_for(d) for d in day_lineups}
+    changes = changes_by_day[day_lineups[0].date] if day_lineups else []
 
     # --- matchup projection --------------------------------------------------
     # Totals are today's score plus the best remaining lineups; the spread comes from each
@@ -150,6 +156,7 @@ def recommend(data: dict[str, Any]) -> dict[str, Any]:
     mine_var = spread(day_lineups)
     projection = {"mine": round(mine, 1), "opponent": None, "mine_range": band(mine, mine_var),
                   "opponent_range": None, "win_probability": None}
+    opp_lineups = []
     if data["opponent"]:
         opp_roster = data["opponent"]["roster"]
         opp_days = sorted({d for r in opp_roster if r["player_id"] in players
@@ -168,6 +175,13 @@ def recommend(data: dict[str, Any]) -> dict[str, Any]:
         "engine_version": ENGINE_VERSION,
         "lineup": lineup_out,
         "changes": changes,
+        "changes_by_day": changes_by_day,
+        # The opponent's best lineup per remaining day: what the Matchup page compares against.
+        "opponent_lineup": [
+            {"date": day.date, "slot": label, "player_id": pid,
+             "projected_fpts": None if pid is None or label in day.locked else round(day.values.get(pid, 0.0), 1)}
+            for day in opp_lineups for label in slot_labels for pid in [day.assignment.get(label)]
+        ],
         "pickups": recommend_pickups(data, players, projections, value_of, slots),
         "matchup_projection": projection,
         "player_projections": {
