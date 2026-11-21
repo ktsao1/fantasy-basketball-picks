@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Chevron, Empty, GameIcon, InfoPopup, Photo, Tag, usePageTitle, useQueryState } from "@/components/ui";
+import { Empty, GameIcon, InfoPopup, Photo, Tag, usePageTitle, useQueryState } from "@/components/ui";
 import { useData } from "@/lib/data";
 import { dayShort, fmt, injury, lastName, signed, tip, unavailable, weekday } from "@/lib/format";
 import type { Data, Player } from "@/lib/types";
@@ -85,7 +85,7 @@ export default function FreeAgentsPage() {
         <Empty>No tracked free agents at {pos}.</Empty>
       ) : (
         <div className="fa-table-wrap">
-          <table className="fa-table">
+          <table className="fa-table" data-sort={sort}>
             <caption className="sr-only">Free agents, sorted by {sortLabel}</caption>
             <thead>
               <tr>
@@ -95,7 +95,6 @@ export default function FreeAgentsPage() {
                     <span className="fa-column">
                       <button className="sort-button" onClick={() => setSort(c.key)}>
                         {c.compact ? <><span className="fa-wide-label">{c.label}</span><span className="fa-compact-label">{c.compact}</span></> : c.label}
-                        <span className="sort-ind" aria-hidden><Chevron dir="down" /></span>
                       </button>
                       {c.key === "value" && (
                         <InfoPopup label="How Value is calculated" trigger={<span className="info-icon" aria-hidden>i</span>}>
@@ -130,10 +129,10 @@ export default function FreeAgentsPage() {
                         </div>
                       </div>
                     </td>
-                    <td className="n">
+                    <td data-column="value" className="n">
                       {rec ? <span className="num value">{fmt(pickupValue(data, rec.pickup))}</span> : <span className="muted">—</span>}
                     </td>
-                    <td className={`n${sort === "ros" || sort === "proj" ? " hide-sm" : ""}`}>
+                    <td data-column="gain" className={`n${sort === "ros" || sort === "proj" ? " hide-sm" : ""}`}>
                       {rec ? (
                         <div className={`gain${rec.pickup.gain_this_week < 0 ? " loss" : ""}`}>
                           <span className="num">{signed(rec.pickup.gain_this_week)}</span>
@@ -141,9 +140,9 @@ export default function FreeAgentsPage() {
                         </div>
                       ) : <span className="muted">—</span>}
                     </td>
-                    <td className={`n${sort === "ros" ? "" : " hide-sm"}`}>{rec ? <span className="num">{signed(rec.pickup.gain_rest_of_season, 0)}</span> : <span className="muted">—</span>}</td>
-                    <td className={`n${sort === "proj" ? "" : " hide-sm"}`}><span className="num">{fmt(countableProjection(data, p))}</span></td>
-                    <td className="n fa-col-games"><Schedule data={data} player={p} /></td>
+                    <td data-column="ros" className={`n${sort === "ros" ? "" : " hide-sm"}`}>{rec ? <span className="num">{signed(rec.pickup.gain_rest_of_season, 0)}</span> : <span className="muted">—</span>}</td>
+                    <td data-column="proj" className={`n${sort === "proj" ? "" : " hide-sm"}`}><span className="num">{fmt(countableProjection(data, p))}</span></td>
+                    <td data-column="games" className="n fa-col-games"><Schedule data={data} player={p} /></td>
                   </tr>
                 );
               })}

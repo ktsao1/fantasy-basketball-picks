@@ -1,6 +1,6 @@
 "use client";
 
-import { DayStepper, Empty, Photo, Source, Tag, useDay, usePageTitle } from "@/components/ui";
+import { DayStepper, Empty, Photo, Tag, useDay, usePageTitle } from "@/components/ui";
 import { useData } from "@/lib/data";
 import { dayShort, fmt, monthDay, signed, weekday } from "@/lib/format";
 import { dayView, gameLine, pastDay, scenarios, scoreThroughDate, sideDay, weekDays as allDays } from "@/lib/view";
@@ -58,7 +58,7 @@ export default function MatchupPage() {
         <div className={`score-row${future ? " score-projected" : ""}`} aria-live="polite">
           <span className="num">{fmt0(score.mine)}</span>
           <div className="mid">
-            {future ? <Source kind="proj" /> : <span className="src src-espn src-logo">
+            {!future && <span className="src src-espn src-logo">
               {/* eslint-disable-next-line @next/next/no-img-element -- a 16px local mark */}
               <img src="/img/espn.png" alt="" width={16} height={16} />
               ESPN
@@ -178,8 +178,6 @@ function Side({ title, color, date, mine = false }: { title: string; color: stri
       <div className="roster-head">
         <span className="dot" style={{ background: color }} />
         <b>{title}</b>
-        <span className="grow" />
-        <span className="section-label">{hasStarted ? "Scored / proj. pts" : "Proj. pts"}</span>
       </div>
       {mine && v && moves > 0 && (
         <p className="side-note">

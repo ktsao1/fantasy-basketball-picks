@@ -6,10 +6,9 @@ import { fmt, lastName, signed, weekday } from "@/lib/format";
 import { addTiming, dropCaution, nextMoves, pickupValue, pts, type DayView } from "@/lib/view";
 import { Card, Chevron, Meter, Photo, Tag } from "./ui";
 
-/** Start/sit for the chosen day: the moves to make on ESPN, or why none are needed. */
-export function StartSit({ v, isToday, onJump }: { v: DayView; isToday: boolean; onJump?: (date: string) => void }) {
+/** Start/sit for today: the moves to make on ESPN, or why none are needed. */
+export function StartSit({ v }: { v: DayView }) {
   const { data, players } = useData();
-  const when = isToday ? "tonight" : weekday(v.date);
   const n = v.moves.length;
   // Nothing to do on this day: point at the next day that has moves, so they aren't missed.
   const next = n === 0 && data ? nextMoves(data, players, v.date) : null;
@@ -17,15 +16,15 @@ export function StartSit({ v, isToday, onJump }: { v: DayView; isToday: boolean;
     <Card title="Start / sit" aside={n > 0 && <Tag tone="rec-soft">{n} recommended {n === 1 ? "move" : "moves"}</Tag>}>
       {n === 0 ? (
         <>
-          <p>No changes needed {when}.</p>
-          {next && onJump && (
-            <button className="next-moves" onClick={() => onJump(next.date)}>
+          <p>No changes needed tonight.</p>
+          {next && (
+            <Link className="next-moves" href={`/matchup?day=${next.date}`}>
               <span>
                 <b>{weekday(next.date)}: {next.moves.length} {next.moves.length === 1 ? "change" : "changes"}</b>
                 <small>{signed(next.withMoves - next.asSet)} proj. pts over the lineup as set</small>
               </span>
               <Chevron dir="right" />
-            </button>
+            </Link>
           )}
         </>
       ) : (

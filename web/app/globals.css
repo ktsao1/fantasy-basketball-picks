@@ -212,10 +212,9 @@ img { display: block; }
 
 /* ---------- today ---------- */
 .today-layout {
-  display: grid; grid-template-columns: minmax(0, 1fr) 440px; grid-template-rows: auto auto 1fr;
-  grid-template-areas: "date date" "band recs" "lineup recs"; gap: 18px 32px; align-items: start;
+  display: grid; grid-template-columns: minmax(0, 1fr) 440px; grid-template-rows: auto 1fr;
+  grid-template-areas: "band recs" "lineup recs"; gap: 18px 32px; align-items: start;
 }
-.today-date { grid-area: date; }
 .today-recs { grid-area: recs; }
 .today-start { gap: 10px; }
 .today-lineup { grid-area: lineup; }
@@ -462,10 +461,21 @@ img { display: block; }
 .fa-table th.n, .fa-table td.n { text-align: right; }
 .fa-table th .sort-button { all: unset; cursor: pointer; display: inline-flex; gap: 4px; align-items: center; }
 .fa-table th .sort-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
-.fa-table th[aria-sort="descending"] .sort-button { color: var(--ink); }
 .fa-table td { padding: 8px 14px; border-top: 1px solid var(--line); vertical-align: middle; }
 .fa-table tr.top td { background: var(--accent-soft); }
 .fa-table tbody tr:hover:not(.top) td { background: var(--bg); }
+.fa-table th[aria-sort="descending"] {
+  background: var(--accent-soft);
+  box-shadow: inset 0 -2px var(--accent);
+  color: var(--accent-ink);
+}
+.fa-table[data-sort="value"] td[data-column="value"],
+.fa-table[data-sort="gain"] td[data-column="gain"],
+.fa-table[data-sort="ros"] td[data-column="ros"],
+.fa-table[data-sort="proj"] td[data-column="proj"],
+.fa-table[data-sort="games"] td[data-column="games"] {
+  background-image: linear-gradient(rgb(42 95 230 / 6%), rgb(42 95 230 / 6%));
+}
 .fa-table .who-cell { display: flex; align-items: center; gap: 12px; min-width: 220px; }
 .fa-table .who-cell a { font-weight: 600; font-size: 14px; }
 .fa-table .who-cell a:hover { color: var(--accent-ink); }
@@ -478,7 +488,7 @@ img { display: block; }
 @media (max-width: 1100px) {
   .today-layout {
     grid-template-columns: minmax(0, 1fr); grid-template-rows: auto;
-    grid-template-areas: "date" "band" "start" "lineup" "agency";
+    grid-template-areas: "band" "start" "lineup" "agency";
   }
   .today-recs { display: contents; }
   .today-start { grid-area: start; }
@@ -537,11 +547,7 @@ html { scrollbar-color: #c4c9d2 transparent; accent-color: var(--accent); caret-
 .how:hover, .how[aria-current="page"] { color: #fff; }
 .how[aria-current="page"] { text-decoration: underline; text-underline-offset: 6px; text-decoration-color: var(--accent); text-decoration-thickness: 2px; }
 
-/* sortable headers: the active column is ink with a down arrow; others show it on hover */
-.sort-ind { display: inline-flex; opacity: 0; transition: opacity .15s; }
-.fa-table th .sort-button:hover .sort-ind { opacity: .45; }
-.fa-table th[aria-sort="descending"] .sort-ind { opacity: 1; color: var(--accent); }
-.fa-table th[aria-sort="descending"] .sort-button { color: var(--ink); }
+/* Free agent table values and player names */
 .fa-table td.n .value { color: var(--ink); font-size: 22px; }
 .fa-table .who-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .fa-table .who-line a { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -687,7 +693,7 @@ html { scrollbar-color: #c4c9d2 transparent; accent-color: var(--accent); caret-
 .doc-note p { font-size: 13px; line-height: 1.6; color: var(--muted); }
 
 @media (prefers-reduced-motion: reduce) {
-  .point-share-bar > span, .sort-ind, .next-moves { transition: none; }
+  .point-share-bar > span, .next-moves { transition: none; }
 }
 
 @media (max-width: 1100px) {
@@ -775,7 +781,7 @@ html { scrollbar-color: #c4c9d2 transparent; accent-color: var(--accent); caret-
   .fa-col-value { width: 23%; }
   .fa-col-games { width: 18%; }
   .fa-table .fa-col-games { text-align: center; }
-  .fa-table .sort-ind, .fa-wide-label, .fa-games { display: none; }
+  .fa-wide-label, .fa-games { display: none; }
   .fa-compact-label, .fa-schedule-short { display: inline; }
   .fa-column { gap: 2px; letter-spacing: .025em; }
   .fa-table .who-line a { white-space: normal; overflow-wrap: anywhere; }
