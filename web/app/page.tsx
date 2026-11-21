@@ -182,7 +182,7 @@ function Stakes({ data }: { data: Data }) {
       <ol className="path" aria-label="Projected finish">
         {path.map((x) => (
           <li key={x.plan} className={`step${x.margin > 0 ? " win" : ""}`}>
-            <Link href={`/matchup${x.plan === "moves" ? "" : `?plan=${x.plan}`}`}>
+            <Link href="/matchup">
               <small>{x.label}</small>
               <span className="num">{cap(marginWord(x.margin))}</span>
               {x.win != null && <span className="pct">{Math.round(x.win * 100)}% to win</span>}

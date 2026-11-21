@@ -1,11 +1,9 @@
 "use client";
 
-import { DayStepper, Empty, Photo, Tag, useDay, usePageTitle, useQueryState } from "@/components/ui";
+import { DayStepper, Empty, Photo, Tag, useDay, usePageTitle } from "@/components/ui";
 import { useData } from "@/lib/data";
-import { dayShort, fmt, lastName, monthDay, signed, weekday } from "@/lib/format";
-import { dayView, gameLine, pastDay, scenarios, sideDay, weekDays as allDays, type Plan } from "@/lib/view";
-
-const PLANS = ["moves", "as-set", "add"] as const;
+import { dayShort, fmt, monthDay, signed, weekday } from "@/lib/format";
+import { dayView, gameLine, pastDay, scenarios, sideDay, weekDays as allDays } from "@/lib/view";
 
 const fmt0 = (n: number | null | undefined) => (n == null ? "—" : Math.round(n).toLocaleString("en-US"));
 
@@ -14,7 +12,6 @@ export default function MatchupPage() {
   const { data, players } = useData();
   const days = data ? allDays(data) : [];
   const [picked, setPicked] = useDay(days, data?.meta.today);
-  const [plan, setPlan] = useQueryState<Plan>("plan", "moves", PLANS);
   if (!data) return null;
   const m = data.matchup;
   const opp = data.opponent;
@@ -26,65 +23,61 @@ export default function MatchupPage() {
   const weekDays = data.meta.matchup_days;
   const played = Math.max(0, weekDays.indexOf(today));
   const now = (m.my_score ?? 0) - (m.opponent_score ?? 0);
-  const path = scenarios(data, players) ?? [];
-  const sc = path.find((x) => x.plan === plan) ?? path.find((x) => x.plan === "moves");
-  const mineFinal = sc?.mine ?? proj?.mine ?? null;
-  const final = mineFinal != null && proj?.opponent != null ? mineFinal - proj.opponent : null;
-  const pWin = sc?.win ?? proj?.win_probability;
+  // The engine's projection: the rest of the week with the recommended moves.
+  const moves = scenarios(data, players)?.find((x) => x.plan === "moves");
+  const mineFinal = moves?.mine ?? proj?.mine ?? null;
+  const oppFinal = proj?.opponent ?? null;
+  const pWin = moves?.win ?? proj?.win_probability ?? null;
   if (!picked) return <Empty>No games this week.</Empty>;
   const date = picked;
   const lead = (x: number) => (x === 0 ? "Tied" : x > 0 ? `Up ${fmt0(x)}` : `Down ${fmt0(-x)}`);
+  const verdict =
+    mineFinal == null || oppFinal == null ? null
+      : Math.round(mineFinal) === Math.round(oppFinal) ? "Projected to tie"
+        : mineFinal > oppFinal ? "You’re projected to win" : `${opp.name} is projected to win`;
+  const youPct = pWin != null ? Math.round(pWin * 100) : null;
 
   return (
     <div className="stack" style={{ gap: 24 }}>
       <section className="score-band on-dark" aria-label="Score">
         <div className="teams">
-          <Team init={initialsOf(me.name)} name={me.name} sub={`${me.wins}–${me.losses}${me.standing ? ` · ${ordinal(me.standing)}` : ""}`} color="var(--accent)" />
+          <Team init={initialsOf(me.name)} name={me.name} sub={`You · ${me.wins}–${me.losses}${me.standing ? ` · ${ordinal(me.standing)}` : ""}`} color="var(--accent-on-dark)" />
           <span className="pill-week">Week {m.matchup_period} · {Math.max(0, weekDays.length - played)} days left</span>
-          <Team init={initialsOf(opp.name)} name={opp.name} sub={`${opp.wins}–${opp.losses}${opp.standing ? ` · ${ordinal(opp.standing)}` : ""}`} color="var(--opp)" right />
+          <Team init={initialsOf(opp.name)} name={opp.name} sub={`${opp.wins}–${opp.losses}${opp.standing ? ` · ${ordinal(opp.standing)}` : ""}`} color="var(--opp-on-dark)" right />
         </div>
+
         <div className="score-row">
           <span className="num">{fmt0(m.my_score)}</span>
           <div className="mid">
-            <b>Score now</b>
-            <small>{lead(now)}</small>
+            <span className="src src-espn src-logo">
+              {/* eslint-disable-next-line @next/next/no-img-element -- a 16px local mark */}
+              <img src="/img/espn.png" alt="" width={16} height={16} />
+              ESPN
+            </span>
+            <b>Current score</b>
+            <small>{lead(now)} · {played} of {weekDays.length} days played</small>
           </div>
           <span className="num r">{fmt0(m.opponent_score)}</span>
         </div>
-        {path.length > 1 && (
-          <div className="plans" role="radiogroup" aria-label="Your lineup for the rest of the week">
-            {path.map((x) => (
-              <button key={x.plan} role="radio" aria-checked={x.plan === (sc?.plan ?? "moves")} onClick={() => setPlan(x.plan)}>
-                {x.label}
-              </button>
-            ))}
+
+        <div className="proj-row">
+          <span className="proj-total"><span className="num">{fmt0(mineFinal)}</span> proj. total</span>
+          {verdict && <h1 className="verdict-line">{verdict}</h1>}
+          <span className="proj-total r">proj. total <span className="num">{fmt0(oppFinal)}</span></span>
+        </div>
+
+        {youPct != null && (
+          <div className="win-odds">
+            <div className="win-bar" role="img" aria-label={`${youPct}% chance you win, ${100 - youPct}% ${opp.name}`}>
+              <span style={{ flexGrow: youPct, background: "var(--accent-on-dark)" }} />
+              <span style={{ flexGrow: 100 - youPct, background: "var(--opp-on-dark)" }} />
+            </div>
+            <div className="win-labels" aria-hidden>
+              <span>{youPct}% you win</span>
+              <span>{100 - youPct}% {opp.name} wins</span>
+            </div>
           </div>
         )}
-        <div className="score-row">
-          <span><span className="num proj-n" style={{ fontSize: 56 }}>{fmt0(mineFinal)}</span><span className="unit">proj.</span></span>
-          <div className="mid" aria-live="polite">
-            <b>Projected final</b>
-            <small className={final != null && final > 0 ? "winning" : undefined}>
-              <span>{final != null ? lead(final) : ""}</span>
-              {pWin != null && <span>{Math.round(pWin * 100)}% to win</span>}
-            </small>
-          </div>
-          <span className="r"><span className="unit">proj.</span><span className="num proj-n" style={{ fontSize: 56 }}>{fmt0(proj?.opponent)}</span></span>
-        </div>
-        {[["You", m.my_score, mineFinal, "var(--accent)"], [opp.name, m.opponent_score, proj?.opponent, "var(--opp)"]].map(([n, s, p, c]) => {
-          // One scale for every plan, so switching plans moves the bar rather than the axis.
-          const scale = Math.max(...path.map((x) => x.mine), proj?.mine ?? 0, proj?.opponent ?? 0, 1) * 1.08;
-          const sNow = (s as number) ?? 0, sProj = (p as number) ?? sNow;
-          return (
-            <div className="track-row" key={n as string}>
-              <span>{n as string}</span>
-              <div className="track" role="img" aria-label={`${fmt0(sNow)} scored, ${fmt0(sProj)} projected`}>
-                <span style={{ width: `${(sNow / scale) * 100}%`, background: c as string }} />
-                <span className="hatch" style={{ width: `${(Math.max(0, sProj - sNow) / scale) * 100}%`, ["--c" as string]: c as string }} />
-              </div>
-            </div>
-          );
-        })}
       </section>
 
       <div style={{ display: "flex", justifyContent: "center" }}>
@@ -100,7 +93,7 @@ export default function MatchupPage() {
           </>
         ) : (
           <>
-            <Side title="You" color="var(--accent)" date={date} mine plan={sc?.plan ?? "moves"} />
+            <Side title="You" color="var(--accent)" date={date} mine />
             <Side title={opp.name} color="var(--opp)" date={date} />
           </>
         )}
@@ -155,26 +148,14 @@ function PastSide({ title, color, date, mine = false }: { title: string; color: 
   );
 }
 
-function Side({ title, color, date, mine = false, plan = "moves" }: { title: string; color: string; date: string; mine?: boolean; plan?: Plan }) {
+function Side({ title, color, date, mine = false }: { title: string; color: string; date: string; mine?: boolean }) {
   const { data, players } = useData();
   if (!data) return null;
   const v = mine ? dayView(data, players, date) : null;
-  const rec = sideDay(data, players, date, mine);
-  // "As set" shows the lineup exactly as it is on ESPN; the other plans show the recommended one.
-  const s = mine && plan === "as-set" && v
-    ? (() => {
-        const rows = v.starters
-          .filter((r) => r.state === "play" || r.state === "live")
-          .map((r) => ({ player: r.player, value: r.value, scored: r.scored }))
-          .sort((a, b) => (b.value ?? -1) - (a.value ?? -1));
-        return { ...rec, rows, total: rows.reduce((t, r) => t + (r.value ?? 0) + (r.scored ?? 0), 0) };
-      })()
-    : rec;
+  const s = sideDay(data, players, date, mine);
   const theirs = mine ? sideDay(data, players, date, false) : null;
   const when = date === data.meta.today ? "today" : weekday(date);
   const moves = v?.moves.length ?? 0;
-  const top = data.recommendations.pickups[0];
-  const add = top ? players.get(top.add_player_id) : undefined;
   return (
     <section className="card rows" style={{ padding: "18px 24px 8px" }} aria-label={`${title}, ${when}`}>
       <div className="roster-head">
@@ -183,14 +164,10 @@ function Side({ title, color, date, mine = false, plan = "moves" }: { title: str
         <span className="grow" />
         <span className="section-label">Proj. pts</span>
       </div>
-      {mine && v && plan !== "as-set" && moves > 0 && (
+      {mine && v && moves > 0 && (
         <p className="side-note">
           With your {moves === 1 ? "recommended move" : `${moves} recommended moves`} ({fmt(v.asSet)} as set on ESPN).
         </p>
-      )}
-      {mine && v && plan === "as-set" && <p className="side-note">Exactly as set on ESPN, no changes.</p>}
-      {mine && plan === "add" && add && top && (
-        <p className="side-note">Plus {lastName(add.name)}: {signed(top.gain_this_week)} proj. pts this week once he&rsquo;s added (not shown by day).</p>
       )}
       {!s.available && <Empty>Their daily lineup isn&rsquo;t in this snapshot.</Empty>}
       {s.available && s.rows.length === 0 && <Empty>Nobody plays {when}.</Empty>}

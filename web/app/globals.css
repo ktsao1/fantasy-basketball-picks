@@ -17,6 +17,9 @@
   --accent-ink: #1f4fd1;
   --accent-soft: #e8efff;
   --opp: #cf3a6f;
+  /* Brighter team colours for the dark score band, where the AA-tuned ones read too dim. */
+  --accent-on-dark: #2f6bff;
+  --opp-on-dark: #e0457b;
   --pos: #0f6b3d;
   --pos-soft: #e3f4ea;
   --pos-on-dark: #4ade80;
@@ -237,27 +240,38 @@ img { display: block; }
 /* ---------- matchup ---------- */
 .score-band {
   background: linear-gradient(90deg, #1b3fa8, var(--dark) 50%, #9c2452);
-  border-radius: var(--radius); padding: 24px 32px; color: #fff; display: grid; gap: 14px;
+  border-radius: var(--radius); padding: 28px 36px; color: #fff; display: grid; gap: 20px;
 }
 .teams { display: flex; align-items: center; gap: 16px; }
 .team { display: flex; align-items: center; gap: 10px; }
 .team.right { flex-direction: row-reverse; text-align: right; }
 .avatar { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 13px; flex: none; }
 .team b { display: block; font-size: 15px; font-weight: 600; }
-.team small { font-size: 12px; color: rgba(255,255,255,.72); }
-.pill-week { margin: 0 auto; background: rgba(255,255,255,.12); border-radius: 999px; padding: 4px 10px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
-.score-row { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; border-top: 1px solid rgba(255,255,255,.14); padding-top: 12px; }
+.team small { font-size: 12px; color: var(--on-dark-muted); }
+.pill-week { margin: 0 auto; border-radius: 999px; padding: 4px 10px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.score-row { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 10px 0 6px; }
 .score-row .num { font-size: 76px; }
-.score-row .proj-n { opacity: .62; }
 .score-row .r { text-align: right; }
-.score-row .mid { display: grid; gap: 4px; justify-items: center; text-align: center; }
+.score-row .mid { display: grid; gap: 6px; justify-items: center; text-align: center; }
 .score-row .mid b { font-size: 14px; font-weight: 600; }
-.score-row .mid small { font-size: 12px; color: rgba(255,255,255,.72); }
-.unit { font-size: 14px; font-weight: 600; opacity: .62; margin: 0 6px; }
-.track-row { display: grid; grid-template-columns: 84px 1fr; gap: 14px; align-items: center; font-size: 12px; }
-.track { height: 14px; border-radius: 7px; background: rgba(255,255,255,.08); overflow: hidden; display: flex; }
-.track > span { height: 100%; }
-.track-row > span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.score-row .mid small { font-size: 12px; font-weight: 500; color: var(--on-dark-muted); }
+.src-logo { font-size: 10px; letter-spacing: .06em; }
+.src-logo::before { content: none; }
+.src-logo img { width: 16px; height: 16px; display: block; }
+/* Projected finish: the totals either side of the verdict, under a hairline. */
+.proj-row {
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px;
+  border-top: 1px solid rgba(255,255,255,.14); padding-top: 20px;
+}
+.proj-total { font-size: 14px; font-weight: 600; color: rgba(255,255,255,.62); white-space: nowrap; }
+.proj-total .num { font-size: 24px; margin-right: 8px; }
+.proj-total.r { text-align: right; }
+.proj-total.r .num { margin: 0 0 0 8px; }
+.verdict-line { margin: 0; font-size: 22px; font-weight: 600; text-align: center; }
+.win-odds { display: grid; gap: 8px; }
+.win-bar { display: flex; gap: 3px; height: 10px; }
+.win-bar > span { flex-basis: 0; min-width: 1px; border-radius: 6px; transition: flex-grow .6s cubic-bezier(.16, 1, .3, 1); }
+.win-labels { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; font-weight: 600; }
 
 
 .rosters { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
@@ -370,12 +384,12 @@ img { display: block; }
   .today-band .total .num { font-size: 56px; }
   .today-band .total, .fa-band .total { margin-left: 0; text-align: left; }
   .teams { flex-wrap: wrap; row-gap: 12px; }
-  .pill-week { order: -1; margin: 0; }
+  .pill-week { order: -1; margin: 0; padding: 0; width: 100%; }
   .teams .team.right { margin-left: auto; }
   .score-row .num { font-size: 48px; }
-  .score-row .proj-n { font-size: 40px !important; }
-  .unit { display: none; }
-  .track-row { grid-template-columns: 64px 1fr; }
+  .proj-row { grid-template-columns: 1fr 1fr; row-gap: 10px; }
+  .verdict-line { grid-column: 1 / -1; grid-row: 1; font-size: 18px; }
+  .proj-total .num { font-size: 20px; }
   .rosters { grid-template-columns: 1fr; }
   .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   .fa-card .photo { height: 120px; }
@@ -523,19 +537,6 @@ html { scrollbar-color: #c4c9d2 transparent; accent-color: var(--accent); caret-
 .step.win + .step a::before, .step.win a::before { border-color: color-mix(in srgb, var(--pos) 35%, transparent); }
 .step.win .num, .step.win small { color: var(--pos); }
 
-/* matchup: what-if plans on the score band */
-.plans { display: inline-flex; justify-self: center; gap: 2px; padding: 3px; border-radius: 999px; background: rgba(255,255,255,.1); }
-.plans button {
-  border: 0; background: transparent; color: rgba(255,255,255,.78); cursor: pointer;
-  font-size: 12px; font-weight: 600; padding: 6px 14px; border-radius: 999px; white-space: nowrap; transition: background .2s, color .2s;
-}
-.plans button:hover { color: #fff; }
-.plans button[aria-checked="true"] { background: #fff; color: var(--ink); }
-.plans button:focus-visible { outline-color: #fff; }
-.score-row .mid small > span { display: block; }
-.score-row .mid small.winning { color: var(--pos-on-dark); font-weight: 600; }
-.track > span { transition: width .6s cubic-bezier(.16, 1, .3, 1); }
-.score-row .proj-n { transition: opacity .2s; }
 .total-row .edge { margin-left: 12px; font-size: 12px; font-weight: 600; }
 .edge.up { color: var(--pos); }
 .edge.down { color: var(--neg); }
@@ -649,7 +650,7 @@ html { scrollbar-color: #c4c9d2 transparent; accent-color: var(--accent); caret-
 .doc-note p { font-size: 13px; line-height: 1.6; color: var(--muted); }
 
 @media (prefers-reduced-motion: reduce) {
-  .track > span, .sort-ind, .next-moves, .plans button { transition: none; }
+  .win-bar > span, .sort-ind, .next-moves { transition: none; }
 }
 
 @media (max-width: 1100px) {
@@ -692,8 +693,6 @@ html { scrollbar-color: #c4c9d2 transparent; accent-color: var(--accent); caret-
   .step .num { font-size: 20px; }
   .step .pct { font-size: 11px; }
 
-  .plans { justify-self: stretch; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .plans button { padding: 7px 6px; white-space: normal; line-height: 1.2; font-size: 11px; }
 
   .notfirst { padding: 16px; }
   .nf-table td { font-size: 16px; padding-left: 8px; }
