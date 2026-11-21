@@ -60,6 +60,15 @@ jobs:
           ANONYMIZE: "true"
         run: python build_data.py
 
+      - name: Grade past calls (track record)
+        if: ${{ !inputs.check_only }}
+        working-directory: pipeline
+        continue-on-error: true
+        env:
+          ESPN_S2: ${{ secrets.ESPN_S2 }}
+          SWID: ${{ secrets.SWID }}
+        run: python track_record.py
+
       - name: Commit data if it changed
         if: ${{ !inputs.check_only }}
         run: |

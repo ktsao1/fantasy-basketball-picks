@@ -2,10 +2,9 @@
 // Runs before `dev` and `build`. Source is ../data, or DATA_DIR if set
 // (handy for pointing the dashboard at a local sample while developing).
 //
-// Copies: latest.json, snapshots/featured.json, and only the snapshots that
-// featured.json lists (not the whole history).
+// Copies: latest.json, track_record.json, actuals.json and lineups.json.
 
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -20,26 +19,15 @@ if (!existsSync(latest)) {
 }
 
 rmSync(out, { recursive: true, force: true });
-mkdirSync(join(out, "snapshots"), { recursive: true });
+mkdirSync(out, { recursive: true });
 copyFileSync(latest, join(out, "latest.json"));
+// The graded record of past calls (pipeline/track_record.py); optional.
+const record = join(src, "track_record.json");
+if (existsSync(record)) copyFileSync(record, join(out, "track_record.json"));
 
-const featuredPath = join(src, "snapshots", "featured.json");
-let featured = [];
-if (existsSync(featuredPath)) {
-  featured = JSON.parse(readFileSync(featuredPath, "utf8"));
-  if (!Array.isArray(featured)) throw new Error("featured.json must be an array");
-}
+// Finished days (pipeline/track_record.py), both optional: final points per player, and
+// each team's lineup that day. Past days in the date stepper show these.
+const extra = ["actuals.json", "lineups.json"].filter((f) => existsSync(join(src, f)));
+for (const f of extra) copyFileSync(join(src, f), join(out, f));
 
-const kept = [];
-for (const entry of featured) {
-  const file = join(src, "snapshots", entry.file);
-  if (!entry.file || !entry.title || !existsSync(file)) {
-    console.warn(`copy-data: skipping featured entry ${JSON.stringify(entry.file)} (missing file or title)`);
-    continue;
-  }
-  copyFileSync(file, join(out, "snapshots", entry.file));
-  kept.push({ file: entry.file, title: entry.title, description: entry.description ?? "" });
-}
-writeFileSync(join(out, "featured.json"), JSON.stringify(kept));
-
-console.log(`copy-data: latest.json + ${kept.length} featured snapshot(s) from ${src}`);
+console.log(`copy-data: latest.json${extra.map((f) => ` + ${f}`).join("")} from ${src}`);

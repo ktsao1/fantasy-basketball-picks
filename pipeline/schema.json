@@ -308,6 +308,10 @@
         "gain_rest_of_season": {
           "type": "number"
         },
+        "value": {
+          "type": "number",
+          "description": "The ranking score: gain this week + rest-of-season gain / weeks left."
+        },
         "reason": {
           "type": "string",
           "minLength": 1
@@ -787,6 +791,10 @@
                 }
               }
             }
+          },
+          "points_today": {
+            "description": "fantasy points so far today from ESPN's box score, once his game has started; null otherwise",
+            "$ref": "#/$defs/nullableNumber"
           }
         }
       }

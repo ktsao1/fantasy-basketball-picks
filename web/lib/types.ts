@@ -54,6 +54,8 @@ export type Player = {
   game_dates_left?: string[];
   /** This matchup week's games for his NBA team, played or not (pipeline ≥ engine 1.2). */
   week_games?: WeekGame[];
+  /** Fantasy points so far today, once his game has tipped off (ESPN box score, pipeline ≥ 1.2). */
+  points_today?: number | null;
   back_to_back_dates?: string[];
   game_today_locked?: boolean;
   games_left_season?: number;
@@ -108,6 +110,8 @@ export type Pickup = {
   gain_this_week: number;
   gain_this_week_range?: Range;
   gain_rest_of_season: number;
+  /** The ranking score: this week's gain + rest-of-season gain ÷ weeks left (engine ≥ 1.2, later runs). */
+  value?: number;
   reason: string;
   confidence: Confidence;
   factors?: Factor[];
@@ -139,6 +143,7 @@ export type Data = {
     anonymized: boolean;
     free_agent_count: number;
     adds_effective_date?: string;
+    regular_season_weeks?: number;
   };
   teams: TeamSummary[];
   my_team: Team;
@@ -164,4 +169,43 @@ export type Data = {
   };
 };
 
-export type FeaturedEntry = { file: string; title: string; description: string };
+/** data/track_record.json (pipeline/track_record.py): past start calls graded against ESPN. */
+export type Call = {
+  date: string;
+  player_id: number;
+  name: string;
+  nba_team: string;
+  slot: string;
+  projected: number;
+  range: Range;
+  made_at: string;
+  tip_utc: string | null;
+  actual: number | null;
+  status?: "graded" | "pending" | "no_score";
+};
+
+export type WeekRecord = {
+  matchup_period: number;
+  opponent: string | null;
+  points: { at: string; score_mine: number | null; score_opponent: number | null; projected_mine: number | null; projected_opponent: number | null; win_probability: number | null }[];
+  final: { mine: number | null; opponent: number | null } | null;
+};
+
+export type TrackRecord = {
+  updated_at: string;
+  snapshots: number;
+  first_snapshot: string | null;
+  summary: {
+    graded: number;
+    pending: number;
+    no_score?: number;
+    days_graded: string[];
+    mean_abs_error: number | null;
+    bias: number | null;
+    within_range: number;
+    projected_total: number;
+    actual_total: number;
+  };
+  calls: Call[];
+  weeks: WeekRecord[];
+};

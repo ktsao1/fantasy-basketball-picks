@@ -92,7 +92,7 @@ Vercel (Next.js, web/) reads the JSON files directly. No backend API.
 
 ```
 pipeline/       espn_client.py, engine/, build_data.py (entry point), schema.json, phase0.py
-data/           latest.json, snapshots/ (+ featured.json)
+data/           latest.json, snapshots/, actuals.json, lineups.json, track_record.json
 web/            Next.js app
 .github/workflows/refresh.yml
 requirements.txt, .env.example, .gitignore
@@ -107,7 +107,7 @@ requirements.txt, .env.example, .gitignore
   - **lineup:** for each slot, the player and the reason.
   - **changes** vs. the current lineup.
   - **pickups:** add, drop, gain this week, gain rest of season, reason, confidence.
-- **Anonymization:** with `ANONYMIZE=true` (the default), other managers' teams become "Opponent A" to "Opponent H". The letters stay the same between runs, so Replay snapshots line up. Kevin's own team keeps its name.
+- **Anonymization:** with `ANONYMIZE=true` (the default), other managers' teams become "Opponent A" to "Opponent H". The letters stay the same between runs, so snapshots line up. Kevin's own team keeps its name.
 
 ## Phase 0: Connect (done 2026-11-20)
 
@@ -174,13 +174,14 @@ requirements.txt, .env.example, .gitignore
   - A `start` change names the player it `replaces` (null for an open slot), so the dashboard can put the move on that player's row.
   - `opponent_lineup`: the opponent's best lineup for each remaining day, with per-player projections (null once a game has started).
   - Each player has `week_games`: this week's games for his NBA team, with opponent, home/away, tip time and whether it has started.
+  - Each player has `points_today`: fantasy points so far today from ESPN's box score, once his game has started. Best effort: if the box score call fails, the run continues without live points.
 
 ## Phase 3: Dashboard on Vercel
 
 1. Kevin provides Figma designs. Until then, build functional, unstyled views.
 2. Views: **Today** (the lineup as set on ESPN, with the recommended moves for the chosen day), **Matchup** (score now vs. projected final, and both sides' starters for the chosen day), **Free agents** (ranked, filterable by position) with a **detail page** per free agent. Opponent was dropped on 2026-11-20; Matchup covers the opponent's roster.
-3. **Live / Replay toggle.** Replay steps through the curated snapshots in `data/snapshots/featured.json`: 3–5 entries, each with a title and a one-line description of why it's interesting.
-4. **"Last updated"** on every page. If the data is more than 24 hours old, show a banner and default to Replay.
+3. ~~Live / Replay toggle~~ — removed 2026-11-20: next to the day picker it read as a second way to change the day, and confused more than it helped. The site always shows the latest pull. Snapshots are still saved in `data/snapshots/`. Since 2026-11-21 the date stepper covers the whole matchup week instead: finished days show that day's lineup as set on ESPN with final points (`data/lineups.json` + `data/actuals.json`, from `track_record.py`), and the starters' total matches ESPN's score.
+4. **"Last synced"** (ESPN mark + time) in the top bar on every page. If the data is more than 24 hours old, show a banner saying the ESPN connection may need reconnecting.
 5. Every recommendation shows its reason and confidence.
 6. Anonymization is on by default.
 
@@ -188,7 +189,7 @@ requirements.txt, .env.example, .gitignore
 
 **Status: live, 2026-11-20.** https://fantasy-basketball-picks.vercel.app
 - **Hosting:** Vercel project `fantasy-basketball-picks`, Root Directory `web/`. Each push, including the pipeline's data commits, redeploys the site.
-- **Data loading:** `web/scripts/copy-data.mjs` runs before `dev` and `build`. It copies `data/latest.json`, `featured.json` and the featured snapshots into `public/data/`, and the browser fetches them.
+- **Data loading:** `web/scripts/copy-data.mjs` runs before `dev` and `build`. It copies `data/latest.json`, `track_record.json`, `actuals.json` and `lineups.json` into `public/data/`, and the browser fetches them.
 - **Built:** all four views, Live/Replay, "Last updated", a stale banner that defaults to Replay after 24 hours, and reason + confidence on every recommendation. Checked locally (including stale data and phone width) and on the live site.
 - **Config:** the scaffold's `cacheComponents` and `partialPrefetching` are off. With them on, the page never loaded in the browser.
 - **Figma design applied, 2026-11-20** (the Broadcast scoreboard direction; Figma file `yxwRvaZ4hJnDubCXP8K1rA`, Section 2).
@@ -200,14 +201,29 @@ requirements.txt, .env.example, .gitignore
     - **Reasons:** ranked drivers that add up to the gain, plus supporting signals.
     - **Evidence:** a points breakdown using the league's scoring, the add vs. drop table, form by time window, and confidence.
   - Checked at desktop and 375px widths with no horizontal overflow.
+- **Critique fixes, 2026-11-20** (Impeccable critique scored 24/40):
+  - **Replay:** now uses an engine 1.2 snapshot (Friday 7:28pm, with Saturday's three moves). `copy-data.mjs` fails the build if a featured snapshot predates engine 1.2 or projects 0 points.
+  - **Live games:** show points scored so far, and totals include them.
+  - **Labelling:** Matchup's "You" column is labelled as the recommended lineup, with the total as set on ESPN alongside. Today opens with the week's stakes.
+  - **Free agents:** now a dense table, sorted by the engine's own ranking (this week's gain plus rest-of-season value), with columns for this week's gain and rest of season.
+  - **Accessibility:**
+    - Contrast tokens pass AA (accent `#2a5fe6`, opponent `#cf3a6f`), and source tags are 11px.
+    - Skip link, a title per page, lists for lineups, and screen-reader labels.
+  - **Day in the URL:** the chosen day is kept in `?day=`.
+- **Decluttering pass, 2026-11-20.** Each screen now shows only what answers its question. Today: "Do I need to change anything?" Matchup: "Am I going to win?" Free agents: "Who's worth adding?" Detail: "Should I make this swap?"
+  - **Banners:** each shows one number and its label, with no caveats or counts restated. The Today stakes line is one sentence with no source tags. The matchup score band no longer repeats its scores on the tracks or "days played".
+  - **Repeats removed:** the per-row "proj. pts" labels (the column header says it once), "drop Diabate" on every row, the ranking explanation, the Last 15 days column on Free agents, and the opponent's "Not playing" list. Matchup's "Games left by day" card is gone too (Kevin: not needed); the day stepper and the two rosters cover each day.
+  - **Detail page:** confidence and range appear once, in the hero. The "How sure is this?" card and the form chart are gone (the add-vs-drop table already covers form), and so are signals that repeat the table. The points breakdown is collapsed by default.
+- **Second critique, 2026-11-20** (27/40). The ranking is now a visible Value column, and the engine writes `value` on each pickup. Also: "why not #1" on detail pages, projections counted from the day an add takes effect, the drop warning placed by the button, and a stacked phone layout. Today has a "flip the week" strip (as set → with the moves → moves + top add, with win chances from the engine's spread). Matchup has a matching what-if switch (`?plan=`). There's a new How it works page.
 - **Still open:**
-  - Curate 3–5 Replay snapshots, including a day with real lineup changes (Saturday 2026-11-21 needs three).
 
 ## Phase 4: Accuracy + presentation polish
 
 1. Log every recommendation with its timestamp, then record what actually happened (fantasy points) after the games.
 2. A simple "How accurate has it been" view built from that log.
 3. Polish for the presentation.
+
+**Started 2026-11-20.** The snapshots are the log. `pipeline/track_record.py` keeps each recommended starter's last projection before tip-off (with an 80% range from the engine's variance). It grades that projection against ESPN's daily box scores, which are cached in `data/actuals.json` so each day is fetched once. It writes `data/track_record.json`. The refresh workflow runs it after every build, and a failure doesn't block the data commit. `/track-record` shows the share of calls inside their range, the average miss and the bias, plus each call by day. First graded day (Fri Nov 20): 7/7 inside the range, average miss 6.8 pts. Not yet graded: pickups (free agents have no box score) and the weekly forecast (`weeks` is recorded but not shown).
 
 ## Out of scope
 
@@ -219,5 +235,5 @@ requirements.txt, .env.example, .gitignore
 
 - **ESPN's API is unofficial and can change.** Keeping it in one module limits the damage.
 - **ESPN may block GitHub's servers.** Test this first; the fallback is a local run plus a push.
-- **The cookies expire.** The workflow fails loudly, the dashboard shows "Last updated", and stale data defaults the dashboard to Replay.
+- **The cookies expire.** The workflow fails loudly, the dashboard shows "Last updated", and a banner flags data more than a day old.
 - **GitHub pauses scheduled workflows** in public repos after 60 days without commits. The pipeline's own data commits keep the repo active.

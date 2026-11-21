@@ -314,6 +314,26 @@ def _matchups(league: League) -> list[dict[str, Any]]:
     return rows
 
 
+def _points_today(league: League) -> dict[int, float]:
+    """Each rostered player's fantasy points so far today, from ESPN's box scores.
+
+    Read-only and best effort: a failure here leaves the dashboard without live points,
+    not without data.
+    """
+    try:
+        boxes = league.box_scores(matchup_period=league.currentMatchupPeriod,
+                                  scoring_period=league.scoringPeriodId, matchup_total=False)
+    except Exception:  # noqa: BLE001 - live points are optional
+        return {}
+    out: dict[int, float] = {}
+    for b in boxes:
+        for lineup in (b.home_lineup or [], b.away_lineup or []):
+            for pl in lineup:
+                if pl.points is not None:
+                    out[pl.playerId] = float(pl.points)
+    return out
+
+
 def fetch_snapshot(config: Config | None = None, free_agent_pool: int = FREE_AGENT_POOL) -> dict[str, Any]:
     """One read of everything: settings, teams, rosters, matchups, free agents, players, NBA schedule."""
     config = config or load_config()
@@ -378,4 +398,5 @@ def fetch_snapshot(config: Config | None = None, free_agent_pool: int = FREE_AGE
         "player_stats": list(stats.values()),
         "pro_games": games,
         "matchup_periods": _matchup_periods(league, games),
+        "points_today": _points_today(league),
     }

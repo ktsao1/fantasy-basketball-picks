@@ -104,6 +104,8 @@ def recommend_pickups(data, players, projections, value_of, slots) -> list[dict[
                 "gain_this_week": round(gain_week, 1),
                 "gain_this_week_range": [round(gain_week - RANGE_Z * sd, 1), round(gain_week + RANGE_Z * sd, 1)],
                 "gain_rest_of_season": round(gain_ros, 1),
+                # What the ranking sorts by: this week plus a typical later week.
+                "value": round(score, 1),
                 "reason": f"Swap for {drop['name']}: " + ", ".join(bits) + ".",
                 "confidence": conf,
                 "factors": factors.for_swap(fa, drop, pf, pd, days, gain_week, waiver),

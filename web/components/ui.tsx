@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import type { Confidence, Player } from "@/lib/types";
 import { headshot, initials } from "@/lib/format";
@@ -17,7 +17,12 @@ export function Photo({ p, size, w, h, round, dim, className }: {
         <span className="initials">{initials(p.name)}</span>
       ) : (
         // eslint-disable-next-line @next/next/no-img-element -- ESPN CDN, not worth an image-optimizer quota
-        <img src={headshot(p.id)} alt="" loading="lazy" decoding="async" onError={() => setFailed(true)} />
+        <img
+          src={headshot(p.id)} alt="" loading="lazy" decoding="async"
+          onError={() => setFailed(true)}
+          // ESPN serves a tiny blank image for players without a headshot.
+          onLoad={(e) => { if (e.currentTarget.naturalWidth < 40) setFailed(true); }}
+        />
       )}
     </span>
   );
@@ -35,12 +40,14 @@ export function Tag({ tone, children }: { tone?: "warn" | "neg" | "pos" | "rec" 
 const LEVELS = { low: 1, medium: 2, high: 3 } as const;
 export function Meter({ c, label = true }: { c: Confidence; label?: boolean }) {
   const n = LEVELS[c.level];
+  const word = c.level[0].toUpperCase() + c.level.slice(1);
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }} title={c.basis}>
       <span className="meter" aria-hidden>
         {[1, 2, 3].map((i) => <i key={i} className={i <= n ? "on" : undefined} />)}
       </span>
-      {label && <span style={{ fontSize: 12, fontWeight: 600 }}>{c.level[0].toUpperCase() + c.level.slice(1)} confidence</span>}
+      {label && <span style={{ fontSize: 12, fontWeight: 600 }} aria-hidden>{word} confidence</span>}
+      <span className="sr-only">{`${word} confidence (${c.basis})`}</span>
     </span>
   );
 }
@@ -69,8 +76,8 @@ export function Games({ n, of, color, size }: { n: number; of?: number; color?: 
   );
 }
 
-export function Chevron({ dir }: { dir: "left" | "right" | "up-right" }) {
-  const d = dir === "left" ? "M10 4 6 8l4 4" : dir === "right" ? "M6 4l4 4-4 4" : "M5 11l6-6M6 5h5v5";
+export function Chevron({ dir }: { dir: "left" | "right" | "up-right" | "down" }) {
+  const d = dir === "left" ? "M10 4 6 8l4 4" : dir === "right" ? "M6 4l4 4-4 4" : dir === "down" ? "M4 6l4 4 4-4" : "M5 11l6-6M6 5h5v5";
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
       <path d={d} stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
@@ -78,7 +85,7 @@ export function Chevron({ dir }: { dir: "left" | "right" | "up-right" }) {
   );
 }
 
-/** Steps through the remaining days of the matchup week. */
+/** Steps through the days of the matchup week, finished ones included. */
 export function DayStepper({ days, value, onChange, today, label }: {
   days: string[]; value: string; onChange: (d: string) => void; today: string; label: (d: string) => { day: string; date: string };
 }) {
@@ -92,7 +99,6 @@ export function DayStepper({ days, value, onChange, today, label }: {
       <span className="stepper-label" aria-live="polite">
         <strong>{value === today ? "Today" : l.day}</strong>
         <span>{l.date}</span>
-        <Source kind="proj" />
       </span>
       <button className="icon-btn" onClick={() => onChange(days[i + 1])} disabled={i >= days.length - 1} aria-label="Next day">
         <Chevron dir="right" />
@@ -120,4 +126,52 @@ export function Card({ title, sub, aside, children, className }: { title?: React
 
 export function Empty({ children }: { children: ReactNode }) {
   return <p className="muted" style={{ padding: "12px 0" }}>{children}</p>;
+}
+
+/** Sets the tab title per page: "Today · Fantasy Picks". */
+export function usePageTitle(title: string) {
+  useEffect(() => {
+    document.title = `${title} · Fantasy Picks`;
+  }, [title]);
+}
+
+/**
+ * The chosen day, kept in ?day= so a day can be linked and survives a reload.
+ * Without one it's `start` (today) when that's among the days, else the first day.
+ */
+export function useDay(days: string[], start?: string): [string | undefined, (d: string) => void] {
+  const [picked, setPicked] = useState<string | null>(null);
+  useEffect(() => {
+    // Read once on mount; the URL is the source of truth after a reload or a shared link.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPicked(new URLSearchParams(window.location.search).get("day"));
+  }, []);
+  const home = start && days.includes(start) ? start : days[0];
+  const date = picked && days.includes(picked) ? picked : home;
+  const set = (d: string) => {
+    setPicked(d);
+    const url = new URL(window.location.href);
+    if (d === home) url.searchParams.delete("day");
+    else url.searchParams.set("day", d);
+    window.history.replaceState(null, "", url);
+  };
+  return [date, set];
+}
+
+/** A small piece of page state kept in the URL (?key=value), so it survives a reload or a shared link. */
+export function useQueryState<T extends string>(key: string, fallback: T, allowed: readonly T[]): [T, (v: T) => void] {
+  const [picked, setPicked] = useState<string | null>(null);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPicked(new URLSearchParams(window.location.search).get(key));
+  }, [key]);
+  const value = (picked && (allowed as readonly string[]).includes(picked) ? picked : fallback) as T;
+  const set = (v: T) => {
+    setPicked(v);
+    const url = new URL(window.location.href);
+    if (v === fallback) url.searchParams.delete(key);
+    else url.searchParams.set(key, v);
+    window.history.replaceState(null, "", url);
+  };
+  return [value, set];
 }

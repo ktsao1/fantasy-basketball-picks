@@ -160,6 +160,8 @@ def build(snap: dict[str, Any], anonymize: bool, now: datetime) -> dict[str, Any
                 "week_games": sorted(week_games.get(p["pro_team"], []), key=lambda g: g["date"]),
                 "back_to_back_dates": back_to_backs(p["pro_team"]),
                 "game_today_locked": p["pro_team"] in locked_today,
+                # Fantasy points so far today, only once his game has tipped off (ESPN box score).
+                "points_today": snap.get("points_today", {}).get(pid) if p["pro_team"] in locked_today else None,
                 "games_left_season": season_left.get(p["pro_team"], 0),
             }
         )

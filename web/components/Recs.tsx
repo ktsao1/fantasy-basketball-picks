@@ -2,24 +2,40 @@
 
 import Link from "next/link";
 import { useData } from "@/lib/data";
-import { lastName, signed, weekday } from "@/lib/format";
-import type { DayView } from "@/lib/view";
-import { Card, Meter, Photo, Tag } from "./ui";
+import { fmt, lastName, signed, weekday } from "@/lib/format";
+import { addTiming, dropCaution, nextMoves, pickupValue, pts, type DayView } from "@/lib/view";
+import { Card, Chevron, Meter, Photo, Tag } from "./ui";
 
 /** Start/sit for the chosen day: the moves to make on ESPN, or why none are needed. */
-export function StartSit({ v, isToday }: { v: DayView; isToday: boolean }) {
+export function StartSit({ v, isToday, onJump }: { v: DayView; isToday: boolean; onJump?: (date: string) => void }) {
+  const { data, players } = useData();
   const when = isToday ? "tonight" : weekday(v.date);
   const n = v.moves.length;
+  // Nothing to do on this day: point at the next day that has moves, so they aren't missed.
+  const next = n === 0 && data ? nextMoves(data, players, v.date) : null;
   return (
-    <Card title="Start / sit" aside={<Tag tone="rec-soft">{n ? `${n} recommended move${n === 1 ? "" : "s"}` : "No moves needed"}</Tag>}>
+    <Card title="Start / sit">
       {n === 0 ? (
-        <p>Your lineup as set on ESPN is already the best one for {when}.</p>
+        <>
+          <p>No changes needed {when}.</p>
+          {next && onJump && (
+            <button className="next-moves" onClick={() => onJump(next.date)}>
+              <span>
+                <b>{weekday(next.date)}: {next.moves.length} {next.moves.length === 1 ? "change" : "changes"}</b>
+                <small>{signed(next.withMoves - next.asSet)} proj. pts over the lineup as set</small>
+              </span>
+              <Chevron dir="right" />
+            </button>
+          )}
+        </>
       ) : (
-        <p>Make {n === 1 ? "this change" : "these changes"} on ESPN before each player&rsquo;s tip-off.</p>
+        <p>Make {n === 1 ? "this change" : `these ${n} changes`} on ESPN before tip-off.</p>
       )}
-      <div className="rows" style={{ marginTop: 12 }}>
+      <div className="rows" style={{ marginTop: n || v.watch.length ? 12 : 0 }}>
         {v.moves.map((m) => {
-          const outValue = v.starters.find((r) => r.player.id === m.out?.id)?.value ?? 0;
+          const outRow = v.starters.find((r) => r.player.id === m.out?.id);
+          const outValue = outRow?.value ?? 0;
+          const empty = !outRow || outRow.state === "idle" || outRow.state === "out";
           return (
             <div className="move" key={m.start.id}>
               <span className="pair">
@@ -39,7 +55,7 @@ export function StartSit({ v, isToday }: { v: DayView; isToday: boolean }) {
               {m.value != null && (
                 <div className="proj">
                   <span className="num" style={{ fontSize: 20, color: "var(--pos)" }}>{signed(m.value - outValue)}</span>
-                  <small>proj. pts</small>
+                  <small>{empty ? "fills an empty slot" : "proj. pts"}</small>
                 </div>
               )}
             </div>
@@ -54,7 +70,7 @@ export function StartSit({ v, isToday }: { v: DayView; isToday: boolean }) {
                   <strong>Watch {lastName(p.name)}</strong>
                   <Tag tone="warn">Day-to-day</Tag>
                 </div>
-                <small>No bench player has a game {when} to swap in if he sits.</small>
+                <small>No bench player can cover if he sits.</small>
               </div>
             </div>
           ))}
@@ -64,24 +80,28 @@ export function StartSit({ v, isToday }: { v: DayView; isToday: boolean }) {
 }
 
 /** The week's best free-agent swap, with the alternatives. */
-export function FreeAgency() {
+export function FreeAgency({ isToday = true }: { isToday?: boolean }) {
   const { data, players } = useData();
   if (!data) return null;
-  const [top, ...rest] = data.recommendations.pickups;
+  const [top, ...rest] = data.recommendations.pickups; // engine order = value order
   const add = top && players.get(top.add_player_id);
   const drop = top?.drop_player_id != null ? players.get(top.drop_player_id) : undefined;
-  const later = data.meta.adds_effective_date && data.meta.adds_effective_date > data.meta.today;
+  // The caution is about making the move right now, so it belongs on today's view only.
+  const caution = isToday ? dropCaution(data, drop) : null;
+  // The single biggest reason, in words; the detail page has the rest.
+  const lead = top?.factors?.find((f) => f.impact_fpts != null) ?? top?.factors?.[0];
+  const why = lead?.label ? pts(lead.label[0].toUpperCase() + lead.label.slice(1)) : null;
 
   return (
     <Card
       title="Free agency moves"
-      aside={later ? <span className="muted" style={{ fontSize: 12 }}>Adds now count from {weekday(data.meta.adds_effective_date!)}</span> : null}
+      aside={<span className="muted" style={{ fontSize: 12 }}>{addTiming(data)}</span>}
     >
       {!top || !add ? (
         <p className="muted">No free agent beats anyone on your roster this week.</p>
       ) : (
         <div style={{ display: "grid", gap: 16 }}>
-          <Link href={`/free-agents/${add.id}`} className="swap" aria-label={`Why add ${add.name}`}>
+          <Link href={`/free-agents/${add.id}`} className="swap">
             <div className="swap-player">
               <Photo p={add} w={112} h={84} />
               <div>
@@ -103,21 +123,18 @@ export function FreeAgency() {
             )}
             <div className="gain">
               <span className="gain-pill"><span className="num">{signed(top.gain_this_week)}</span></span>
-              <small>proj. fpts this week</small>
+              <small>proj. pts this week</small>
             </div>
           </Link>
-          <div className="chips">
-            {(top.factors ?? []).slice(0, 3).map((f) => (
-              <span className="reason-chip" key={f.key}>{f.label}</span>
-            ))}
-          </div>
+          {why && <p className="muted" style={{ fontSize: 13 }}>{why}</p>}
+          {caution && <p className="caution">{caution}</p>}
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <Meter c={top.confidence} />
             <Link href={`/free-agents/${add.id}`} className="btn" style={{ marginLeft: "auto" }}>See why</Link>
           </div>
           {rest.length > 0 && (
             <div style={{ borderTop: "1px solid var(--line)", paddingTop: 12 }}>
-              <p className="section-label">Other options · 1 add per day</p>
+              <p className="section-label options-head"><span>Other options</span><span>Value · this week</span></p>
               {rest.map((x) => {
                 const p = players.get(x.add_player_id);
                 const d = x.drop_player_id != null ? players.get(x.drop_player_id) : undefined;
@@ -127,9 +144,12 @@ export function FreeAgency() {
                     <Photo p={p} size={34} round />
                     <div className="who">
                       <b style={{ fontSize: 13, fontWeight: 600 }}>{p.name}</b>
-                      <small>{p.nba_team} · {p.primary_position}{d ? ` · drop ${lastName(d.name)}` : ""}</small>
+                      <small>{p.nba_team} · {p.primary_position}{d && d.id !== drop?.id ? ` · drop ${lastName(d.name)}` : ""}</small>
                     </div>
-                    <span className="num" style={{ fontSize: 18, color: "var(--pos)" }}>{signed(x.gain_this_week)}</span>
+                    <span className="option-nums">
+                      <span className="num">{fmt(pickupValue(data, x))}</span>
+                      <small>{signed(x.gain_this_week)} this week</small>
+                    </span>
                   </Link>
                 );
               })}

@@ -3,13 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useData } from "@/lib/data";
-import { ago, clock, dayShort } from "@/lib/format";
-import { Chevron } from "./ui";
+import { ago, clock } from "@/lib/format";
 
 const NAV = [
   { href: "/", label: "Today" },
   { href: "/matchup", label: "Matchup" },
   { href: "/free-agents", label: "Free agents" },
+  { href: "/track-record", label: "Track record" },
 ];
 
 export function Shell({ children }: { children: React.ReactNode }) {
@@ -19,6 +19,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
+      <a href="#main" className="skip">Skip to content</a>
       <header className="topbar">
         <div className="topbar-inner">
           <Link href="/" className="brand">Fantasy Picks</Link>
@@ -33,9 +34,16 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
       {ctx.status === "ready" && <Notices />}
-      <main className="page">
+      <main className="page" id="main" tabIndex={-1}>
         {ctx.status === "loading" && <p className="loading">Loading league data…</p>}
-        {ctx.status === "error" && <p className="error">Couldn&rsquo;t load the league data ({ctx.error}).</p>}
+        {ctx.status === "error" && (
+          <div className="error" role="alert">
+            <p><b>Couldn&rsquo;t load the league data.</b></p>
+            <p>Check your connection, then try again. If it keeps failing, the latest pull may be missing from the site.</p>
+            <button className="btn" onClick={ctx.reload}>Try again</button>
+            <small>{ctx.error}</small>
+          </div>
+        )}
         {ctx.status === "ready" && ctx.data && children}
       </main>
     </>
@@ -43,57 +51,30 @@ export function Shell({ children }: { children: React.ReactNode }) {
 }
 
 function TopRight() {
-  const { featured, mode, setMode, data, liveIsStale } = useData();
+  const { data } = useData();
+  const here = usePathname();
   if (!data) return null;
   const at = data.meta.updated_at;
   return (
     <div className="topbar-right">
-      <span className={`synced${liveIsStale && mode === "live" ? " stale" : ""}`} title={new Date(at).toLocaleString()}>
-        <span>{mode === "replay" ? "Snapshot from" : "Last synced"}</span> {mode === "replay" ? dayShort(at.slice(0, 10)) : ""} {clock(at)}
+      <Link href="/how-it-works" className="how" aria-current={here === "/how-it-works" ? "page" : undefined}>How it works</Link>
+      <span className="synced" title={new Date(at).toLocaleString()} data-time={clock(at)}>
+        <img src="/img/espn.png" alt="ESPN" width={16} height={16} />
+        Last synced {clock(at)}
       </span>
-      <div className="mode" role="group" aria-label="Data source">
-        <button aria-pressed={mode === "live"} onClick={() => setMode("live")}>Live</button>
-        <button
-          aria-pressed={mode === "replay"}
-          onClick={() => setMode("replay")}
-          disabled={featured.length === 0}
-          title={featured.length === 0 ? "No snapshots curated yet" : "Step through saved snapshots"}
-        >
-          Replay
-        </button>
-      </div>
     </div>
   );
 }
 
 function Notices() {
-  const { live, featured, mode, replayIndex, setReplayIndex, liveIsStale } = useData();
-  const entry = featured[replayIndex];
+  const { data, isStale } = useData();
+  if (!isStale || !data) return null;
   return (
-    <>
-      {liveIsStale && live && (
-        <div className="notice-warn">
-          <p className="notice">
-            Live data is more than a day old (last pulled {ago(live.meta.updated_at)}), so the ESPN connection may need
-            reconnecting.{featured.length > 0 && mode === "replay" && " Showing a saved snapshot instead."}
-          </p>
-        </div>
-      )}
-      {mode === "replay" && entry && (
-        <div className="notice-replay">
-          <div className="notice">
-            <button className="icon-btn" onClick={() => setReplayIndex(replayIndex - 1)} disabled={replayIndex === 0} aria-label="Previous snapshot">
-              <Chevron dir="left" />
-            </button>
-            <p className="grow">
-              <strong>Replay {replayIndex + 1} of {featured.length}: {entry.title}.</strong> {entry.description}
-            </p>
-            <button className="icon-btn" onClick={() => setReplayIndex(replayIndex + 1)} disabled={replayIndex >= featured.length - 1} aria-label="Next snapshot">
-              <Chevron dir="right" />
-            </button>
-          </div>
-        </div>
-      )}
-    </>
+    <div className="notice-warn">
+      <p className="notice">
+        This data is more than a day old (last pulled {ago(data.meta.updated_at)}), so the ESPN connection may need
+        reconnecting.
+      </p>
+    </div>
   );
 }

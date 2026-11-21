@@ -1,22 +1,38 @@
 // Derived views over the pipeline JSON. Pages stay declarative; the joins live here.
 
-import type { Change, Data, Pickup, Player, WeekGame } from "./types";
-import { tip, unavailable } from "./format";
+import type { Change, Data, Pickup, Player, Team, WeekGame } from "./types";
+import { lastName, tip, unavailable } from "./format";
 
 const SLOT_ORDER = ["PG", "SG", "SF", "PF", "C", "G", "F", "UT", "BE", "IR"];
 export const slotType = (s: string) => s.replace(/\d+$/, "");
 const BENCH = new Set(["BE", "IR"]);
 
 export function gameOn(p: Player | undefined, date: string): WeekGame | undefined {
-  return p?.week_games?.find((g) => g.date === date);
+  if (!p) return undefined;
+  if (p.week_games) return p.week_games.find((g) => g.date === date);
+  // Snapshots from before engine 1.2 only have dates: keep the game, without opponent or time.
+  return p.game_dates_left?.includes(date) ? { date, opponent: null, home: false, start_utc: null, started: false } : undefined;
 }
 
 /** "TOR @ DET · 7:30 PM", or null when he has no game that day. */
 export function gameLine(p: Player, date: string): string | null {
   const g = gameOn(p, date);
   if (!g) return null;
-  const vs = `${p.nba_team} ${g.home ? "vs" : "@"} ${g.opponent ?? "TBD"}`;
+  if (!g.opponent) return `${p.nba_team} · Game ${g.started ? "in progress" : "scheduled"}`;
+  const vs = `${p.nba_team} ${g.home ? "vs" : "@"} ${g.opponent}`;
   return `${vs} · ${g.started ? "In progress" : tip(g.start_utc)}`;
+}
+
+/** "TOR @ DET · Final", for a game on a finished day. */
+export function finalLine(p: Player, date: string): string {
+  const g = gameOn(p, date);
+  if (!g) return `${p.nba_team} · No game`;
+  return g.opponent ? `${p.nba_team} ${g.home ? "vs" : "@"} ${g.opponent} · Final` : `${p.nba_team} · Final`;
+}
+
+/** Every day of this matchup week, finished days included, in order. */
+export function weekDays(data: Data): string[] {
+  return data.meta.matchup_days?.length ? data.meta.matchup_days : lineupDays(data);
 }
 
 /** Days with a recommended lineup, i.e. the rest of this matchup week, in order. */
@@ -43,6 +59,8 @@ export type LineupRow = {
   game: WeekGame | undefined;
   /** Projection for this day, or null when he can't play or his game is live. */
   value: number | null;
+  /** Points already scored today (live or finished game), from ESPN. */
+  scored: number | null;
   state: "play" | "live" | "idle" | "out";
   /** A recommended starter who takes this player's slot. */
   replacedBy?: Move;
@@ -62,6 +80,8 @@ export type DayView = {
   playing: number;
   playingAsSet: number;
   liveCount: number;
+  /** Points already scored by starters whose games have started. */
+  liveScored: number;
   watch: Player[];
 };
 
@@ -92,7 +112,7 @@ export function dayView(data: Data, players: Map<number, Player>, date: string):
     const live = !!game?.started && rec.has(p.id) && rec.get(p.id) == null;
     const value = out || !game ? null : live ? null : rec.has(p.id) ? rec.get(p.id)! : p.projection.engine_fpts_per_game ?? null;
     rows.push({
-      slot: slotType(r.lineup_slot ?? "BE"), player: p, game, value,
+      slot: slotType(r.lineup_slot ?? "BE"), player: p, game, value, scored: live ? p.points_today ?? null : null,
       state: out ? "out" : !game ? "idle" : live ? "live" : "play",
       replacedBy: byOut.get(p.id), startAt: startSlot.get(p.id),
     });
@@ -108,34 +128,100 @@ export function dayView(data: Data, players: Map<number, Player>, date: string):
     playing: rec.size,
     playingAsSet: starters.filter((r) => r.state === "play" || r.state === "live").length,
     liveCount: starters.filter((r) => r.state === "live").length,
+    liveScored: sum(starters.filter((r) => r.state === "live").map((r) => r.scored)),
     watch: benchPlays ? [] : starters.filter((r) => r.state === "play" && r.player.injury_status === "DAY_TO_DAY" && !r.replacedBy).map((r) => r.player),
   };
 }
 
-export type SideDay = { rows: { player: Player; value: number | null }[]; total: number; off: Player[] };
+export type PastRow = {
+  /** Where he sat that day ("PG", "UT", "BE"…), or null when that day's lineup wasn't saved. */
+  slot: string | null;
+  player: Pick<Player, "id" | "name" | "nba_team">;
+  played: boolean;
+  scored: number | null;
+  /** "TOR @ DET · Final", or "No game". */
+  line: string;
+};
+export type PastDay = {
+  date: string;
+  /** Starters in slot order (or, without slots, everyone who played, best first). */
+  starters: PastRow[];
+  bench: PastRow[];
+  /** Points that counted: the starters' (or the whole roster's, without slots). */
+  total: number;
+  played: number;
+  /** ESPN's box scores for this day have been fetched. */
+  hasResults: boolean;
+  /** That day's lineup slots are known, so the total is the starters' only. */
+  hasSlots: boolean;
+};
+
+type DayLineups = Record<string, Record<string, Record<string, { slot: string; name: string; nba_team: string }>>>;
+
+/**
+ * A finished day for one team, from ESPN's box scores: that day's lineup (players since dropped
+ * included), what each scored, and the points that counted.
+ */
+export function pastDay(
+  team: Team | null | undefined, players: Map<number, Player>, actuals: Record<string, Record<string, number>>,
+  lineups: DayLineups, date: string,
+): PastDay {
+  const pts = actuals[date];
+  const saved = team ? lineups[date]?.[String(team.team_id)] : undefined;
+  const row = (id: number, slot: string | null, fallback?: { name: string; nba_team: string }): PastRow | null => {
+    const p = players.get(id);
+    if (!p && !fallback) return null;
+    const scored = pts?.[String(id)] ?? null;
+    // A player since dropped isn't in this pull, so his schedule is unknown: a score means he played.
+    const played = p ? !!gameOn(p, date) : !!scored;
+    return {
+      slot, player: p ?? { id, ...fallback! }, played, scored: played ? scored : null,
+      line: p ? finalLine(p, date) : `${fallback!.nba_team} · ${played ? "Final" : "No game"}`,
+    };
+  };
+
+  if (saved) {
+    const rows = Object.entries(saved)
+      .map(([id, e]) => row(Number(id), slotType(e.slot), e))
+      .filter((r): r is PastRow => !!r)
+      .sort((x, y) => SLOT_ORDER.indexOf(x.slot!) - SLOT_ORDER.indexOf(y.slot!) || (y.scored ?? -1) - (x.scored ?? -1));
+    const starters = rows.filter((r) => !BENCH.has(r.slot!));
+    return {
+      date, starters, bench: rows.filter((r) => BENCH.has(r.slot!)),
+      total: starters.reduce((t, r) => t + (r.scored ?? 0), 0),
+      played: starters.filter((r) => r.played).length, hasResults: !!pts, hasSlots: true,
+    };
+  }
+
+  // No saved lineup for this day: today's roster, everyone who played, bench included.
+  const rows = (team?.roster ?? [])
+    .map((r) => row(r.player_id, null))
+    .filter((r): r is PastRow => !!r)
+    .sort((x, y) => Number(y.played) - Number(x.played) || (y.scored ?? -1) - (x.scored ?? -1));
+  return {
+    date, starters: rows, bench: [], total: rows.reduce((t, r) => t + (r.scored ?? 0), 0),
+    played: rows.filter((r) => r.played).length, hasResults: !!pts, hasSlots: false,
+  };
+}
+
+export type SideDay = { rows: { player: Player; value: number | null; scored: number | null }[]; total: number; off: Player[]; available: boolean };
 
 /** One side's starters on a day: mine from the recommended lineup, theirs from the opponent's. */
 export function sideDay(data: Data, players: Map<number, Player>, date: string, mine: boolean): SideDay {
   const team = mine ? data.my_team : data.opponent;
+  const available = mine || !!data.recommendations.opponent_lineup;
   const slots = mine ? data.recommendations.lineup : data.recommendations.opponent_lineup ?? [];
   const rows = slots
     .filter((s) => s.date === date && s.player_id != null && players.has(s.player_id))
-    .map((s) => ({ player: players.get(s.player_id!)!, value: s.projected_fpts ?? null }))
+    .map((s) => {
+      const player = players.get(s.player_id!)!;
+      const live = s.projected_fpts == null && !!gameOn(player, date)?.started;
+      return { player, value: s.projected_fpts ?? null, scored: live ? player.points_today ?? null : null };
+    })
     .sort((a, b) => (b.value ?? -1) - (a.value ?? -1));
   const on = new Set(rows.map((r) => r.player.id));
   const off = (team?.roster ?? []).map((r) => players.get(r.player_id)).filter((p): p is Player => !!p && !on.has(p.id));
-  return { rows, total: rows.reduce((s, r) => s + (r.value ?? 0), 0), off };
-}
-
-/** Starters with a game, per remaining day, for both sides. */
-export function gamesByDay(data: Data): { date: string; mine: number; theirs: number }[] {
-  const days = lineupDays(data);
-  const count = (xs: { date?: string; player_id: number | null }[], d: string) => xs.filter((x) => x.date === d && x.player_id != null).length;
-  return days.map((d) => ({
-    date: d,
-    mine: count(data.recommendations.lineup, d),
-    theirs: count(data.recommendations.opponent_lineup ?? [], d),
-  }));
+  return { rows, total: rows.reduce((s, r) => s + (r.value ?? 0) + (r.scored ?? 0), 0), off, available };
 }
 
 export function pickupFor(data: Data, addId: number): { pickup: Pickup; rank: number } | null {
@@ -162,3 +248,125 @@ export const STAT_NAMES: Record<string, string> = {
 };
 
 export const ESPN_TEAM_URL = "https://fantasy.espn.com/basketball/team?leagueId=1851873571&teamId=14&seasonId=2027";
+
+/** When an add made now starts counting, phrased the same everywhere. */
+export function addTiming(data: Data): string {
+  const eff = data.meta.adds_effective_date;
+  if (eff && eff > data.meta.today) {
+    const [y, m, d] = eff.split("-").map(Number);
+    return `Adds made now count from ${new Date(y, m - 1, d).toLocaleDateString("en-US", { weekday: "long" })}`;
+  }
+  return "Adds lock at today’s first tip-off";
+}
+
+/** If the player you'd drop plays today, the advice for when to make the move. */
+export function dropCaution(data: Data, drop: Player | undefined): string | null {
+  const g = drop ? gameOn(drop, data.meta.today) : undefined;
+  if (!drop || !g) return null;
+  const name = drop.name.split(" ").slice(-1)[0];
+  return g.started
+    ? `${drop.name} is playing right now. Make the move after his game ends so tonight's points stay with you.`
+    : `${name} plays tonight (${tip(g.start_utc)}). Make the move after his game so you keep his points.`;
+}
+
+// ---------- ranking ----------
+
+/** Matchup weeks left in the regular season, this one included. */
+export function weeksLeft(data: Data): number {
+  return Math.max(1, (data.meta.regular_season_weeks ?? 19) - data.meta.matchup_period + 1);
+}
+
+/** The score the engine ranks pickups by: this week's gain plus a typical later week's. */
+export function pickupValue(data: Data, pk: Pickup): number {
+  return pk.value ?? Math.round((pk.gain_this_week + pk.gain_rest_of_season / weeksLeft(data)) * 10) / 10;
+}
+
+/** Rest-of-season gain spread over the weeks left: what one later week is worth. */
+export function perWeekLater(data: Data, pk: Pickup): number {
+  return pk.gain_rest_of_season / weeksLeft(data);
+}
+
+// ---------- what an add can use ----------
+
+/** The first day an add made now counts: adds lock at the first tip, waiver claims take a day more. */
+export function addStart(data: Data, p?: Player): string {
+  const eff = data.meta.adds_effective_date ?? data.meta.today;
+  if (p?.free_agent_status !== "WAIVERS") return eff;
+  const [y, m, d] = eff.split("-").map(Number);
+  const next = new Date(Date.UTC(y, m - 1, d + 1));
+  return next.toISOString().slice(0, 10);
+}
+
+/** His games this week that an add made now would count. */
+export function countableGames(data: Data, p: Player): number {
+  const from = addStart(data, p);
+  return (p.game_dates_left ?? []).filter((d) => d >= from).length;
+}
+
+/** His projected points from the games an add can use (the engine's week total, scaled). */
+export function countableProjection(data: Data, p: Player): number | null {
+  const week = p.projection.engine_week_fpts;
+  if (week == null) return null;
+  const all = p.game_dates_left?.length ?? p.games_left_this_week;
+  return all ? (week * countableGames(data, p)) / all : 0;
+}
+
+// ---------- scenarios ----------
+
+/** z for the engine's published 80% ranges (pipeline/engine/projection.py RANGE_Z). */
+const RANGE_Z = 1.28;
+
+function normalCdf(x: number): number {
+  // Abramowitz–Stegun 7.1.26: plenty for a percentage shown to the nearest point.
+  const t = 1 / (1 + 0.3275911 * Math.abs(x) / Math.SQRT2);
+  const y = 1 - ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-(x * x) / 2);
+  return x >= 0 ? (1 + y) / 2 : (1 - y) / 2;
+}
+
+export type Plan = "as-set" | "moves" | "add";
+export type Scenario = { plan: Plan; label: string; mine: number; opponent: number; margin: number; win: number | null };
+
+/**
+ * The week's projected final three ways: the lineup as set on ESPN every remaining day, with
+ * the recommended moves (the engine's own projection), and with the moves plus the top add.
+ * Win chances reuse the engine's spread (from its 80% ranges), so "with moves" matches it exactly.
+ */
+export function scenarios(data: Data, players: Map<number, Player>): Scenario[] | null {
+  const m = data.matchup;
+  const p = data.recommendations.matchup_projection ?? m.projected;
+  if (m.is_bye || !data.opponent || p?.mine == null || p?.opponent == null) return null;
+  const sdOf = (r?: [number, number] | null) => (r ? (r[1] - r[0]) / (2 * RANGE_Z) : 0);
+  const sd = Math.sqrt(sdOf(p.mine_range) ** 2 + sdOf(p.opponent_range) ** 2);
+  const win = (mine: number) => (sd > 0 ? normalCdf((mine - p.opponent!) / sd) : mine > p.opponent! ? 1 : mine < p.opponent! ? 0 : 0.5);
+
+  const asSet = (m.my_score ?? 0) + lineupDays(data).reduce((s, d) => s + dayView(data, players, d).asSet, 0);
+  const top = data.recommendations.pickups[0];
+  const add = top ? players.get(top.add_player_id) : undefined;
+  const make = (plan: Plan, label: string, mine: number): Scenario => ({
+    plan, label, mine, opponent: p.opponent!, margin: mine - p.opponent!, win: plan === "moves" && p.win_probability != null ? p.win_probability : win(mine),
+  });
+  const out = [make("as-set", "As set on ESPN", asSet), make("moves", "With the moves", p.mine)];
+  if (top && add) out.push(make("add", `Moves + add ${lastName(add.name)}`, p.mine + top.gain_this_week));
+  return out;
+}
+
+/** "up 5", "down 30", "tied", from a margin in points. */
+export function marginWord(x: number): string {
+  const r = Math.round(x);
+  return r === 0 ? "tied" : r > 0 ? `up ${r}` : `down ${-r}`;
+}
+
+/** The next day after `date` that has recommended lineup changes, if any. */
+export function nextMoves(data: Data, players: Map<number, Player>, date: string): DayView | null {
+  for (const d of lineupDays(data)) {
+    if (d <= date) continue;
+    const v = dayView(data, players, d);
+    if (v.moves.length) return v;
+  }
+  return null;
+}
+
+/** Engine labels say "fpts"; the interface says "pts". */
+export function pts(label: string): string {
+  return label.replace(/\bfpts\b/g, "pts");
+}
