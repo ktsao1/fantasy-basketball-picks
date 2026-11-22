@@ -7,7 +7,7 @@ import { useData } from "@/lib/data";
 import { dayShort, fmt, injury, lastName, positions, signed, splitAvg, unavailable, weekday } from "@/lib/format";
 import type { Data, Factor, Pickup, Player } from "@/lib/types";
 import {
-  addStart, addTiming, dropCaution, ESPN_TEAM_URL, gameOn, perWeekLater, pickupFor, pickupValue, pointsBreakdown, pts, STAT_NAMES, matchupSwapHref,
+  addStart, addTiming, dropCaution, ESPN_TEAM_URL, gameOn, perWeekLater, pickupFor, pickupValue, pointsBreakdown, pts, STAT_NAMES, matchupImpactHref,
 } from "@/lib/view";
 
 const DRIVER_TITLE: Partial<Record<Factor["key"], string>> = {
@@ -93,7 +93,7 @@ function Action({ data, p, drop }: { data: Data; p: Player; drop: Player }) {
   const caution = dropCaution(data, drop);
   const g = gameOn(drop, data.meta.today);
   const claim = p.free_agent_status === "WAIVERS";
-  const previewHref = matchupSwapHref(data, p, drop, example);
+  const impactHref = matchupImpactHref(data, p, drop, example);
   return (
     <div className="action">
       {!example && caution && <p className="caution action-caution">{caution}</p>}
@@ -105,7 +105,7 @@ function Action({ data, p, drop }: { data: Data; p: Player; drop: Player }) {
         <b>{claim ? "Claim" : "Add"} {p.name}, drop {drop.name}</b>
         <small>{claim ? `Projected to count from ${weekday(addStart(data, p))} if the claim clears` : addTiming(data)}</small>
       </div>
-      {previewHref && <Link className={example ? "btn" : "btn btn-secondary"} href={previewHref}>Simulate in Matchup <span aria-hidden>→</span></Link>}
+      {impactHref && <Link className={example ? "btn" : "btn btn-secondary"} href={impactHref}>See matchup impact <span aria-hidden>→</span></Link>}
       {!example && <a className="btn" href={ESPN_TEAM_URL} target="_blank" rel="noreferrer">
         {g ? `Open ESPN after ${lastName(drop.name)}’s game` : claim ? "Open ESPN to claim" : "Make the move on ESPN"} <Chevron dir="up-right" />
         <span className="sr-only"> (opens ESPN in a new tab)</span>

@@ -54,12 +54,12 @@ export default function FreeAgentsPage() {
         <Link href={`/free-agents/${best.id}`} className="band fa-band on-dark">
           <Photo p={best} w={96} h={72} />
           <div className="fa-band-text">
-            <h1 className="band-title">{best.name} is the best add this week.</h1>
+            <h1 className="band-title">{best.name} is the top pickup</h1>
             <p className="band-sub">{bestDrop ? `Drop ${bestDrop.name}. ` : ""}{addTiming(data)}.</p>
           </div>
           <div className="total">
             <span className="num" style={{ color: "var(--pos-on-dark)" }}>{signed(top.gain_this_week)}</span>
-            <span className="band-label">Proj. pts this week</span>
+            <span className="band-label">Proj. gain this week</span>
           </div>
         </Link>
       ) : (
@@ -134,7 +134,7 @@ export default function FreeAgentsPage() {
                     </td>
                     <td data-column="gain" className={`n${sort === "ros" || sort === "proj" ? " hide-sm" : ""}`}>
                       {rec ? (
-                        <div className={`gain${rec.pickup.gain_this_week < 0 ? " loss" : ""}`}>
+                        <div className="gain" data-direction={Math.sign(rec.pickup.gain_this_week)}>
                           <span className="num">{signed(rec.pickup.gain_this_week)}</span>
                           {drop && drop.id !== bestDrop?.id && <small>drop {lastName(drop.name)}</small>}
                         </div>

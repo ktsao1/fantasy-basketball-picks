@@ -6,8 +6,7 @@ import { Photo, Tag, usePageTitle } from "@/components/ui";
 import { useData } from "@/lib/data";
 import { fmt, lastName } from "@/lib/format";
 import type { Data } from "@/lib/types";
-import { emptyRosterPreview, previewDay } from "@/lib/roster-preview";
-import { dayView, gameLine, marginWord, weekDays, type LineupRow } from "@/lib/view";
+import { dayView, gameLine, marginWord, myLineupDay, weekDays, type LineupRow } from "@/lib/view";
 
 export default function TodayPage() {
   usePageTitle("Today");
@@ -17,7 +16,7 @@ export default function TodayPage() {
   const today = data.meta.today;
   const v = dayView(data, players, today, asOf);
   const n = v.moves.length;
-  const lineup = previewDay(data, players, emptyRosterPreview, today, n > 0, asOf);
+  const lineup = myLineupDay(data, players, today, asOf, n > 0);
   const totalLabel = lineup.rows.some((row) => row.started) ? "Estimated lineup points" : "Projected lineup points";
   const pickup = data.recommendations.pickups[0];
   const add = pickup && players.get(pickup.add_player_id);

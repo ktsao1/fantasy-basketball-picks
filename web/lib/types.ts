@@ -116,7 +116,6 @@ export type Change = {
 export type Pickup = {
   add_player_id: number;
   drop_player_id: number | null;
-  lineup_preview?: Record<string, Omit<OpponentSlot, "date">[]>;
   gain_this_week: number;
   gain_this_week_range?: Range;
   gain_rest_of_season: number;

@@ -40,12 +40,12 @@ export default function HowItWorks() {
         <h2 id="design">Design &amp; AI architecture</h2>
         <p>
           I designed Fantasy Picks around a decision I make before tip-off. Today surfaces the next move.
-          The player detail shows the evidence for that move. Matchup lets me test it against my current lineup before I act in ESPN.
+          The player detail shows the evidence for that move. Matchup shows the projected point swing for each recommended pickup and the selected day’s lineup changes.
         </p>
         <ul className="doc-list">
           <li><b>Put the decision first.</b> The pickup card pairs the incoming and outgoing players up front, with a detailed comparison one click away. <a href="https://www.cs.umd.edu/users/ben/papers/Shneiderman1996eyes.pdf">Shneiderman’s overview and details on demand</a></li>
           <li><b>Show where the gain comes from.</b> The detail page names the factors driving the recommendation and shows how many points each adds. <a href="https://www.microsoft.com/en-us/haxtoolkit/guideline/make-clear-why-the-system-did-what-it-did/">Microsoft HAX, Guideline 11</a> · <a href="https://arxiv.org/abs/2102.02437">EUCA explanation framework</a></li>
-          <li><b>Make uncertainty visible.</b> Each scored swap pairs its point estimate with a projected range. Matchup labels simulated results separately from ESPN scores. <a href="https://pair.withgoogle.com/chapter/explainability-trust/">Google PAIR on explainability and trust</a></li>
+          <li><b>Make uncertainty visible.</b> Each scored swap pairs its point estimate with a projected range. Matchup shows the ESPN score, the forecast as set, and the projected impact of recommendations. <a href="https://pair.withgoogle.com/chapter/explainability-trust/">Google PAIR on explainability and trust</a></li>
         </ul>
         <p>
           I used AI to synthesize the design research, prototype the lineup solver, and critique the interface. One critique
@@ -56,7 +56,7 @@ export default function HowItWorks() {
           The running app uses a rules-based Python engine. It blends scoring inputs, checks lineup and roster constraints,
           and saves the result as JSON. I set the league constraints and decide which recommendations to act on.
         </p>
-        <p><Link href="/example">Try the dated example</Link> to see the explanation and simulate the swap.</p>
+        <p><Link href="/example">Try the dated example</Link> to see the explanation and compare the swap’s matchup impact.</p>
       </section>
 
       <section className="doc-sec" aria-labelledby="flow">

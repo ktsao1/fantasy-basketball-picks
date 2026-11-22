@@ -303,7 +303,7 @@
           ]
         },
         "lineup_preview": {
-          "description": "Simulated starting slots keyed by eligible matchup date.",
+          "description": "Legacy lineup preview stored in some archived snapshots.",
           "type": "object",
           "additionalProperties": {
             "type": "array",

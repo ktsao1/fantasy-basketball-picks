@@ -4,7 +4,7 @@ import type { Change, Data, Pickup, Player, Team, WeekGame } from "./types";
 import { lastName, tip, unavailable } from "./format";
 
 const SLOT_ORDER = ["PG", "SG", "SF", "PF", "C", "G", "F", "UT", "BE", "IR"];
-export const slotType = (s: string) => s.replace(/\d+$/, "");
+const slotType = (s: string) => s.replace(/\d+$/, "");
 const BENCH = new Set(["BE", "IR"]);
 
 export function gameOn(p: Player | undefined, date: string): WeekGame | undefined {
@@ -219,28 +219,112 @@ export function pastDay(
 
 export type SideDay = { rows: { player: Player; slot: string; value: number | null; scored: number | null; started: boolean }[]; total: number; off: Player[]; available: boolean };
 
-/** One side's starters on a day: mine from the recommended lineup, theirs from the opponent's. */
-export function sideDay(data: Data, players: Map<number, Player>, date: string, mine: boolean, asOf: number): SideDay {
-  const team = mine ? data.my_team : data.opponent;
-  const available = mine || !!data.recommendations.opponent_lineup;
-  const slots = mine ? data.recommendations.lineup : data.recommendations.opponent_lineup ?? [];
+/** The engine's estimated starters for the opponent. */
+export function opponentLineupDay(data: Data, players: Map<number, Player>, date: string, asOf: number): SideDay {
+  const available = !!data.recommendations.opponent_lineup;
+  const slots = data.recommendations.opponent_lineup ?? [];
   const rows = slots.flatMap((slot) => {
     const player = slot.player_id == null ? undefined : players.get(slot.player_id);
     if (slot.date !== date || !player) return [];
     return [playerPoints(data, player, date, asOf, slot.slot, slot.projected_fpts)];
   }).sort((a, b) => (b.value ?? -1) - (a.value ?? -1));
   const on = new Set(rows.map((r) => r.player.id));
-  const off = (team?.roster ?? []).flatMap(({ player_id }) => {
+  const off = (data.opponent?.roster ?? []).flatMap(({ player_id }) => {
     const player = players.get(player_id);
     return player && !on.has(player_id) ? [player] : [];
   });
   return { rows, total: rows.reduce((s, r) => s + (r.value ?? r.scored ?? 0), 0), off, available };
 }
 
+/** ESPN's synced slots, optionally with the engine's recommendations applied around locked games. */
+export function myLineupDay(
+  data: Data, players: Map<number, Player>, date: string, asOf: number, recommended = false, pickup?: Pickup,
+): SideDay {
+  const roster = pickup
+    ? [...data.my_team.roster.filter((entry) => entry.player_id !== pickup.drop_player_id),
+      { player_id: pickup.add_player_id, lineup_slot: "BE" }]
+    : data.my_team.roster;
+  const slots = Object.entries(data.meta.roster_slots).flatMap(([slot, count]) =>
+    BENCH.has(slot) ? [] : Array.from({ length: count }, (_, i) => count > 1 ? `${slot}${i + 1}` : slot));
+  const assigned = new Map<string, number>();
+  for (const entry of roster) {
+    const current = slotType(entry.lineup_slot ?? "BE");
+    if (BENCH.has(current)) continue;
+    const slot = slots.find((candidate) => !assigned.has(candidate) && slotType(candidate) === current);
+    if (slot) assigned.set(slot, entry.player_id);
+  }
+
+  const projections = recValues(data, date);
+  if (pickup || (recommended && lineupDays(data).includes(date))) {
+    const locked = new Set(roster.flatMap(({ player_id }) => {
+      const player = players.get(player_id);
+      return player && playerLocked(data, player, date, asOf) ? [player_id] : [];
+    }));
+    const eligible = new Set(roster.filter((entry) => entry.lineup_slot !== "IR").map((entry) => entry.player_id));
+    for (const [slot, id] of assigned) if (!locked.has(id)) assigned.delete(slot);
+    if (pickup) {
+      const open = slots.filter((slot) => !assigned.has(slot));
+      const playersBySlot = new Map<string, Player>();
+      const candidates = roster.flatMap(({ player_id, lineup_slot }) => {
+        const player = players.get(player_id);
+        if (!player || !eligible.has(player_id) || locked.has(player_id)) return [];
+        const value = playerPoints(data, player, date, asOf, "BE", projections.get(player_id)).value ?? 0;
+        return value > 0 ? [{ player, value, preferred: lineup_slot }] : [];
+      }).sort((a, b) => b.value - a.value);
+      const recommendedSlots = new Map(data.recommendations.lineup
+        .filter((row) => row.date === date).map((row) => [row.player_id, row.slot]));
+      const preferences = new Map(candidates.map(({ player, preferred }) => {
+        const suggested = recommendedSlots.get(player.id);
+        const priority = (slot: string) => slot === suggested ? 0 : slotType(slot) === preferred ? 1 : 2;
+        const eligibleSlots = open.filter((slot) => player.positions.includes(slotType(slot)));
+        return [player.id, eligibleSlots.sort((a, b) => priority(a) - priority(b))];
+      }));
+      // Add the highest-value players first, reassigning earlier picks to eligible slots if needed.
+      const place = (player: Player, visited: Set<string>): boolean => {
+        const options = preferences.get(player.id) ?? [];
+        const free = options.find((slot) => !visited.has(slot) && !playersBySlot.has(slot));
+        if (free) {
+          playersBySlot.set(free, player);
+          return true;
+        }
+        for (const slot of options) {
+          if (visited.has(slot)) continue;
+          visited.add(slot);
+          const occupant = playersBySlot.get(slot);
+          if (occupant && place(occupant, visited)) {
+            playersBySlot.set(slot, player);
+            return true;
+          }
+        }
+        return false;
+      };
+      for (const { player } of candidates) place(player, new Set());
+      for (const [slot, player] of playersBySlot) assigned.set(slot, player.id);
+    } else {
+      for (const row of data.recommendations.lineup) {
+        const id = row.player_id;
+        if (row.date !== date || id == null || !eligible.has(id) || locked.has(id) || assigned.has(row.slot)) continue;
+        assigned.set(row.slot, id);
+      }
+    }
+  }
+
+  const rows = [...assigned].flatMap(([slot, id]) => {
+    const player = players.get(id);
+    return player ? [playerPoints(data, player, date, asOf, slot, projections.get(id))] : [];
+  }).sort((a, b) => slots.indexOf(a.slot) - slots.indexOf(b.slot));
+  const on = new Set(rows.map((row) => row.player.id));
+  const off = roster.flatMap(({ player_id }) => {
+    const player = players.get(player_id);
+    return player && !on.has(player_id) ? [player] : [];
+  });
+  return { rows, off, available: true, total: rows.reduce((sum, row) => sum + (row.scored ?? row.value ?? 0), 0) };
+}
+
 /** Weekly score through the selected date. Forecasts start from ESPN's current score. */
 export function scoreThroughDate(
   data: Data, players: Map<number, Player>, actuals: Record<string, Record<string, number>>,
-  lineups: DayLineups, date: string, asOf: number, preview?: ReadonlyMap<string, SideDay>,
+  lineups: DayLineups, date: string, asOf: number,
 ) {
   const today = data.meta.today;
   const through = weekDays(data).filter((day) => day <= date);
@@ -249,7 +333,8 @@ export function scoreThroughDate(
     if (date === today) return current[i];
     if (date > today) {
       if (current[i] == null) return null;
-      const remaining = through.filter((day) => day >= today).map((day) => (i === 0 ? preview?.get(day) : undefined) ?? sideDay(data, players, day, i === 0, asOf));
+      const remaining = through.filter((day) => day >= today).map((day) =>
+        i === 0 ? myLineupDay(data, players, day, asOf) : opponentLineupDay(data, players, day, asOf));
       if (remaining.some((side) => !side.available)) return null;
       return current[i] + remaining.reduce((total, side) =>
         total + side.rows.reduce((sum, row) => sum + (row.value ?? 0), 0), 0);
@@ -335,11 +420,11 @@ export function addStart(data: Data, p?: Player): string {
   return next.toISOString().slice(0, 10);
 }
 
-/** A swap can be simulated when its first eligible day is inside a head-to-head matchup. */
-export function matchupSwapHref(data: Data, add: Player, drop: Player, example = false): string | null {
+/** Link directly to the projected impact of a recommended swap. */
+export function matchupImpactHref(data: Data, add: Player, drop: Player, example = false): string | null {
   const date = addStart(data, add);
   if (!data.opponent || data.matchup.is_bye || !weekDays(data).includes(date)) return null;
-  return `${example ? "/example" : ""}/matchup?day=${date}&swap=${add.id}-${drop.id}`;
+  return `${example ? "/example" : ""}/matchup?day=${date}&swap=${add.id}-${drop.id}#pickup-impact`;
 }
 
 /** His games this week that an add made now would count. */
@@ -373,8 +458,8 @@ function normalCdf(x: number): number {
   return x >= 0 ? (1 + y) / 2 : (1 - y) / 2;
 }
 
-/** Final projection for the selected lineup settings. Actual points are already in the ESPN score. */
-export function matchupProjection(data: Data, players: Map<number, Player>, preview: ReadonlyMap<string, SideDay>, asOf: number) {
+/** Weekly forecast from the ESPN score plus the remaining lineup projections. */
+export function matchupProjection(data: Data, players: Map<number, Player>, asOf: number, recommended = false) {
   const projection = data.recommendations.matchup_projection ?? data.matchup.projected;
   if (projection?.mine == null || projection.opponent == null) return null;
   const remaining = weekDays(data).filter((date) => date >= data.meta.today);
@@ -382,7 +467,7 @@ export function matchupProjection(data: Data, players: Map<number, Player>, prev
     const original = mine ? data.recommendations.lineup : data.recommendations.opponent_lineup ?? [];
     return remaining.reduce((total, date) => {
       const engine = original.filter((row) => row.date === date).reduce((sum, row) => sum + (row.projected_fpts ?? 0), 0);
-      const selected = (mine ? preview.get(date) : undefined) ?? sideDay(data, players, date, mine, asOf);
+      const selected = mine ? myLineupDay(data, players, date, asOf, recommended) : opponentLineupDay(data, players, date, asOf);
       return total + selected.rows.reduce((sum, row) => sum + (row.value ?? 0), 0) - engine;
     }, 0);
   };

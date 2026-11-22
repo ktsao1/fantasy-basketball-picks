@@ -28,11 +28,6 @@ export function Photo({ p, size, w, h, round, dim, className }: {
   );
 }
 
-/** Where a figure comes from: ESPN (actual) or our projection. */
-export function Source({ kind, children }: { kind: "espn" | "proj"; children?: ReactNode }) {
-  return <span className={`src src-${kind}`}>{children ?? (kind === "espn" ? "ESPN" : "Projected")}</span>;
-}
-
 export function Tag({ tone, children }: { tone?: "warn" | "neg" | "pos" | "rec" | "rec-soft" | "ink" | "light" | "glass"; children: ReactNode }) {
   return <span className={`tag${tone ? ` tag-${tone}` : ""}`}>{children}</span>;
 }
@@ -85,30 +80,6 @@ export function Chevron({ dir }: { dir: "left" | "right" | "up-right" | "down" }
   );
 }
 
-/** Steps through the days of the matchup week, finished ones included. */
-export function DayStepper({ days, value, onChange, today, label, status }: {
-  days: string[]; value: string; onChange: (d: string) => void; today: string; label: (d: string) => { day: string; date: string };
-  status?: string;
-}) {
-  const i = days.indexOf(value);
-  const l = label(value);
-  return (
-    <div className="stepper" role="group" aria-label="Day">
-      <button className="icon-btn" onClick={() => onChange(days[i - 1])} disabled={i <= 0} aria-label="Previous day">
-        <Chevron dir="left" />
-      </button>
-      <span className="stepper-label" aria-live="polite">
-        <strong>{value === today ? "Today" : l.day}</strong>
-        <span>{l.date}</span>
-        {status && <Source kind={status === "Final" ? "espn" : "proj"}>{status}</Source>}
-      </span>
-      <button className="icon-btn" onClick={() => onChange(days[i + 1])} disabled={i >= days.length - 1} aria-label="Next day">
-        <Chevron dir="right" />
-      </button>
-    </div>
-  );
-}
-
 export function InfoPopup({ label, trigger, children }: { label: string; trigger: ReactNode; children: ReactNode }) {
   const id = useId();
   return (
@@ -151,19 +122,19 @@ export function usePageTitle(title: string) {
  * The chosen day, kept in ?day= so a day can be linked and survives a reload.
  * Without one it's `start` (today) when that's among the days, else the first day.
  */
-export function useDay(days: string[], start?: string, initialDay?: string): [string | undefined, (d: string) => void] {
-  const [picked, setPicked] = useState<string | null>(initialDay ?? null);
+export function useDay(days: string[], start?: string): [string | undefined, (d: string) => void] {
+  const [picked, setPicked] = useState<string | null>(null);
   useEffect(() => {
     // Read once on mount; the URL is the source of truth after a reload or a shared link.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setPicked(new URLSearchParams(window.location.search).get("day") ?? initialDay ?? null);
-  }, [initialDay]);
+    setPicked(new URLSearchParams(window.location.search).get("day"));
+  }, []);
   const home = start && days.includes(start) ? start : days[0];
-  const date = picked && days.includes(picked) ? picked : initialDay ?? home;
+  const date = picked && days.includes(picked) ? picked : home;
   const set = (d: string) => {
     setPicked(d);
     const url = new URL(window.location.href);
-    if (d === home && !initialDay) url.searchParams.delete("day");
+    if (d === home) url.searchParams.delete("day");
     else url.searchParams.set("day", d);
     window.history.replaceState(null, "", url);
   };

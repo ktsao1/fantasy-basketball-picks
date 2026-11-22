@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useData } from "@/lib/data";
 import { lastName, monthDay, signed, weekday } from "@/lib/format";
-import { addStart, countableGames, dropCaution, matchupSwapHref, type DayView } from "@/lib/view";
+import { addStart, countableGames, dropCaution, type DayView } from "@/lib/view";
 import { Card, Photo, Tag } from "./ui";
 
 /** Start/sit for the selected day: the moves to make on ESPN, or why none are needed. */
@@ -75,7 +75,6 @@ export function FreeAgency() {
   const add = top && players.get(top.add_player_id);
   const drop = top?.drop_player_id != null ? players.get(top.drop_player_id) : undefined;
   const caution = dropCaution(data, drop);
-  const previewHref = add && drop ? matchupSwapHref(data, add, drop) : null;
   const effective = add ? addStart(data, add) : data.meta.today;
   const addGames = add ? countableGames(data, add) : 0;
   const dropGames = drop?.game_dates_left?.filter((date) => date >= effective).length ?? 0;
@@ -92,7 +91,8 @@ export function FreeAgency() {
       ) : (
         <div className="today-pickup-content">
           <Link className="today-pickup-lead" href={`/free-agents/${add.id}`}>
-            <span><b>{add.free_agent_status === "WAIVERS" ? "Claim" : "Add"} {add.name} <span className="today-pickup-arrow" aria-hidden>→</span></b>
+            <Photo p={add} key={add.id} size={48} className="today-pickup-photo" />
+            <span className="today-pickup-name"><b>{add.free_agent_status === "WAIVERS" ? "Claim" : "Add"} {add.name} <span className="today-pickup-arrow" aria-hidden>→</span></b>
               <small>Counts from {monthDay(effective)}{drop && ` · Drop ${drop.name}`}</small>
             </span>
             <span className="today-pickup-gain">
@@ -110,9 +110,8 @@ export function FreeAgency() {
             {hot && <li><Image src="/img/pickup/trend.svg" width={16} height={16} alt="" unoptimized />Hot last 15 days</li>}
           </ul>
           {caution && <p className="caution">{caution}</p>}
-          {previewHref && <Link className="btn btn-secondary today-simulate" href={previewHref}>Simulate in Matchup <span aria-hidden>→</span></Link>}
           {rest.length > 0 && (
-            <details className="today-pickup-alternatives">
+            <details className="today-pickup-alternatives" open>
               <summary className="section-label">Other options</summary>
               {rest.map((option) => {
                 const player = players.get(option.add_player_id);

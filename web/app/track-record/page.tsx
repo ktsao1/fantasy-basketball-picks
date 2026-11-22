@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useId, useRef, useState } from "react";
-import { Chevron, Empty, Photo, Tag, useDay, usePageTitle } from "@/components/ui";
+import { DateCalendar } from "@/components/DateCalendar";
+import { Empty, Photo, Tag, useDay, usePageTitle } from "@/components/ui";
 import { useData, useTrackRecord } from "@/lib/data";
 import { dayShort, fmt, signed, weekday } from "@/lib/format";
 import type { Call, TrackRecord } from "@/lib/types";
@@ -62,7 +62,7 @@ function Record({ r }: { r: TrackRecord }) {
       {date && (
         <section className="card rows tr-day" aria-label={`${dayShort(date)} calls`}>
           <div className="roster-head">
-            <RecordCalendar dates={days} date={date} onChange={setDate} />
+            <DateCalendar dates={days} date={date} onChange={setDate} label="Record date" />
             {selected.length > 0 && <span className="muted" style={{ fontSize: 13 }} aria-live="polite">{dayLine(selected)}</span>}
           </div>
           {selected.length ? selected.map((c) => <CallRow key={`${c.date}-${c.player_id}`} c={c} min={min} max={max} />)
@@ -111,49 +111,6 @@ function Record({ r }: { r: TrackRecord }) {
         </p>
       </section>
     </div>
-  );
-}
-
-function RecordCalendar({ dates, date, onChange }: { dates: string[]; date: string; onChange: (date: string) => void }) {
-  const id = useId();
-  const popup = useRef<HTMLDivElement>(null);
-  const trigger = useRef<HTMLButtonElement>(null);
-  const [browsing, setBrowsing] = useState<string | null>(null);
-  const months = [...new Set(dates.map((d) => d.slice(0, 7)))].sort();
-  const month = browsing ?? date.slice(0, 7);
-  const index = months.indexOf(month);
-  const [year, number] = month.split("-").map(Number);
-  const first = new Date(year, number - 1, 1);
-  const offset = first.getDay();
-  const length = new Date(year, number, 0).getDate();
-  return (
-    <>
-      <button type="button" ref={trigger} className="record-date popup-trigger" popoverTarget={id} onClick={() => setBrowsing(null)} aria-label={`Choose record date, ${dayShort(date)}`}>
-        {dayShort(date)} <Chevron dir="down" />
-      </button>
-      <div id={id} ref={popup} popover="auto" className="info-popup record-calendar" aria-label="Recorded dates">
-        <div className="calendar-head">
-          <button className="icon-btn" type="button" disabled={index <= 0} onClick={() => setBrowsing(months[index - 1])} aria-label="Previous recorded month"><Chevron dir="left" /></button>
-          <strong aria-live="polite">{first.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</strong>
-          <button className="icon-btn" type="button" disabled={index >= months.length - 1} onClick={() => setBrowsing(months[index + 1])} aria-label="Next recorded month"><Chevron dir="right" /></button>
-        </div>
-        <div className="calendar-days">
-          {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((day) => <small key={day} aria-hidden>{day}</small>)}
-          {Array.from({ length: offset }, (_, i) => <span key={`offset-${i}`} aria-hidden />)}
-          {Array.from({ length }, (_, i) => {
-            const d = `${month}-${String(i + 1).padStart(2, "0")}`;
-            return (
-              <button key={d} type="button" disabled={!dates.includes(d)} aria-current={d === date ? "date" : undefined}
-                aria-label={dayShort(d)} onClick={() => {
-                  onChange(d);
-                  popup.current?.hidePopover();
-                  trigger.current?.focus();
-                }}>{i + 1}</button>
-            );
-          })}
-        </div>
-      </div>
-    </>
   );
 }
 
