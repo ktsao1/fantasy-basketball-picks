@@ -19,14 +19,14 @@ const SIGNAL_TITLE: Partial<Record<Factor["key"], string>> = {
 };
 
 export function FreeAgentDetail({ id }: { id: number }) {
-  const { data, players, example } = useData();
+  const { data, players } = useData();
   const p = players.get(id);
   usePageTitle(p ? p.name : "Free agent");
   if (!data) return null;
   if (!p || p.owner != null) {
     return (
       <div className="stack">
-        {!example && <Back />}
+        <Back />
         <Empty>That player isn&rsquo;t one of the free agents tracked in this snapshot.</Empty>
       </div>
     );
@@ -39,7 +39,7 @@ export function FreeAgentDetail({ id }: { id: number }) {
 
   return (
     <div className="stack" style={{ gap: 24 }}>
-      {!example && <Back />}
+      <Back />
 
       <section className="band hero on-dark" aria-label="Verdict">
         <Photo p={p} w={200} h={148} dim={unavailable(p)} />
@@ -82,21 +82,20 @@ export function FreeAgentDetail({ id }: { id: number }) {
           {drop ? <Versus data={data} p={p} drop={drop} /> : <Form p={p} />}
         </div>
       </div>
-      {!example && <PlayerGameLog id={p.id} season={data.meta.season} scoring={data.meta.scoring_items} />}
+      <PlayerGameLog id={p.id} season={data.meta.season} scoring={data.meta.scoring_items} />
     </div>
   );
 }
 
 /** The move, with the timing caution first when the player you'd drop is playing today. */
 function Action({ data, p, drop }: { data: Data; p: Player; drop: Player }) {
-  const { example } = useData();
   const caution = dropCaution(data, drop);
   const g = gameOn(drop, data.meta.today);
   const claim = p.free_agent_status === "WAIVERS";
-  const impactHref = matchupImpactHref(data, p, drop, example);
+  const impactHref = matchupImpactHref(data, p, drop);
   return (
     <div className="action">
-      {!example && caution && <p className="caution action-caution">{caution}</p>}
+      {caution && <p className="caution action-caution">{caution}</p>}
       <span className="pair">
         <Photo p={p} size={32} round />
         <Photo p={drop} size={32} round dim />
@@ -105,11 +104,11 @@ function Action({ data, p, drop }: { data: Data; p: Player; drop: Player }) {
         <b>{claim ? "Claim" : "Add"} {p.name}, drop {drop.name}</b>
         <small>{claim ? `Projected to count from ${weekday(addStart(data, p))} if the claim clears` : addTiming(data)}</small>
       </div>
-      {impactHref && <Link className={example ? "btn" : "btn btn-secondary"} href={impactHref}>See matchup impact <span aria-hidden>→</span></Link>}
-      {!example && <a className="btn" href={ESPN_TEAM_URL} target="_blank" rel="noreferrer">
+      {impactHref && <Link className="btn btn-secondary" href={impactHref}>See matchup impact <span aria-hidden>→</span></Link>}
+      <a className="btn" href={ESPN_TEAM_URL} target="_blank" rel="noreferrer">
         {g ? `Open ESPN after ${lastName(drop.name)}’s game` : claim ? "Open ESPN to claim" : "Make the move on ESPN"} <Chevron dir="up-right" />
         <span className="sr-only"> (opens ESPN in a new tab)</span>
-      </a>}
+      </a>
     </div>
   );
 }

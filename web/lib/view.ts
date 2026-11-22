@@ -421,10 +421,10 @@ export function addStart(data: Data, p?: Player): string {
 }
 
 /** Link directly to the projected impact of a recommended swap. */
-export function matchupImpactHref(data: Data, add: Player, drop: Player, example = false): string | null {
+export function matchupImpactHref(data: Data, add: Player, drop: Player): string | null {
   const date = addStart(data, add);
   if (!data.opponent || data.matchup.is_bye || !weekDays(data).includes(date)) return null;
-  return `${example ? "/example" : ""}/matchup?day=${date}&swap=${add.id}-${drop.id}#pickup-impact`;
+  return `/matchup?day=${date}&swap=${add.id}-${drop.id}#pickup-impact`;
 }
 
 /** His games this week that an add made now would count. */

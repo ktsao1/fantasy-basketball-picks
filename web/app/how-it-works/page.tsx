@@ -56,7 +56,6 @@ export default function HowItWorks() {
           The running app uses a rules-based Python engine. It blends scoring inputs, checks lineup and roster constraints,
           and saves the result as JSON. I set the league constraints and decide which recommendations to act on.
         </p>
-        <p><Link href="/example">Try the dated example</Link> to see the explanation and compare the swap’s matchup impact.</p>
       </section>
 
       <section className="doc-sec" aria-labelledby="flow">

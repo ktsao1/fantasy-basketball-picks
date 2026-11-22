@@ -33,7 +33,6 @@ export default function TodayPage() {
           <MatchupContext data={data} />
           <div className="today-band-links">
             {!data.matchup.is_bye && data.opponent && <Link className="today-matchup-link" href="/matchup">View matchup <span aria-hidden>→</span></Link>}
-            <Link className="today-matchup-link" href="/example">Video example <span aria-hidden>→</span></Link>
           </div>
         </div>
         <div className="total">

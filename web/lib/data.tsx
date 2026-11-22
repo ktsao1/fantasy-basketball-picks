@@ -1,9 +1,6 @@
 "use client";
 
-// Loads the live league or the dated submission snapshot.
-
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { usePathname } from "next/navigation";
 import type { Data, Player, TrackRecord } from "./types";
 
 const STALE_MS = 24 * 60 * 60 * 1000;
@@ -12,7 +9,6 @@ type Ctx = {
   status: "loading" | "error" | "ready";
   error?: string;
   data: Data | null;
-  example: boolean;
   asOf: number;
   /** The last pull is more than a day old, so the ESPN connection may need reconnecting. */
   isStale: boolean;
@@ -32,12 +28,6 @@ export type Lineups = Record<string, Record<string, Record<string, { slot: strin
 const DataContext = createContext<Ctx | null>(null);
 
 export function DataProvider({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const example = pathname === "/example" || pathname.startsWith("/example/");
-  return <LeagueData key={example ? "example" : "live"} example={example}>{children}</LeagueData>;
-}
-
-function LeagueData({ children, example }: { children: React.ReactNode; example: boolean }) {
   const [asOf, setAsOf] = useState(0);
   const [status, setStatus] = useState<Ctx["status"]>("loading");
   const [error, setError] = useState<string>();
@@ -51,14 +41,14 @@ function LeagueData({ children, example }: { children: React.ReactNode; example:
     let cancelled = false;
     (async () => {
       try {
-        const path = example ? "/data/submission-example.json" : "/data/latest.json";
-        const res = await fetch(path, { cache: example ? "default" : "no-store" });
+        const path = "/data/latest.json";
+        const res = await fetch(path, { cache: "no-store" });
         if (!res.ok) throw new Error(`${path}: ${res.status}`);
         const d = (await res.json()) as Data;
         // Past days' results are optional: the dashboard still works without them.
         const optional = <T,>(path: string) =>
           fetch(path, { cache: "no-store" }).then((r) => (r.ok ? (r.json() as Promise<T>) : null)).catch(() => null);
-        const [a, l] = example ? [null, null] : await Promise.all([
+        const [a, l] = await Promise.all([
           optional<Actuals>("/data/actuals.json"), optional<Lineups>("/data/lineups.json"),
         ]);
         if (cancelled) return;
@@ -67,8 +57,8 @@ function LeagueData({ children, example }: { children: React.ReactNode; example:
         setData(d);
         const synced = Date.parse(d.meta.updated_at);
         const now = Date.now();
-        setAsOf(example ? synced : now);
-        setIsStale(!example && now - synced >= STALE_MS);
+        setAsOf(now);
+        setIsStale(now - synced >= STALE_MS);
         setStatus("ready");
       } catch (e) {
         if (cancelled) return;
@@ -79,10 +69,10 @@ function LeagueData({ children, example }: { children: React.ReactNode; example:
     return () => {
       cancelled = true;
     };
-  }, [attempt, example]);
+  }, [attempt]);
 
   useEffect(() => {
-    if (example || !data || !asOf) return;
+    if (!data || !asOf) return;
     const tips = data.players.flatMap((player) => (player.week_games ?? [])
       .filter((game) => game.date === data.meta.today && game.start_utc)
       .map((game) => Date.parse(game.start_utc!)));
@@ -95,7 +85,7 @@ function LeagueData({ children, example }: { children: React.ReactNode; example:
       setIsStale(now - Date.parse(data.meta.updated_at) >= STALE_MS);
     }, Math.max(0, next - Date.now()));
     return () => window.clearTimeout(timer);
-  }, [asOf, data, example]);
+  }, [asOf, data]);
 
   const reload = () => {
     setStatus("loading");
@@ -105,7 +95,7 @@ function LeagueData({ children, example }: { children: React.ReactNode; example:
   const players = useMemo(() => new Map((data?.players ?? []).map((p) => [p.id, p])), [data]);
 
   return (
-    <DataContext.Provider value={{ status, error, data, asOf, example, isStale, players, actuals, lineups, reload }}>{children}</DataContext.Provider>
+    <DataContext.Provider value={{ status, error, data, asOf, isStale, players, actuals, lineups, reload }}>{children}</DataContext.Provider>
   );
 }
 

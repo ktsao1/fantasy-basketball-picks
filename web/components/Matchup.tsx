@@ -32,9 +32,8 @@ function MatchupRoute() {
 
 function MatchupPage({ swap }: { swap: string | null }) {
   usePageTitle("Matchup");
-  const { data, players, actuals, lineups, asOf, example } = useData();
-  const all = data ? allDays(data) : [];
-  const days = example && data ? all.filter((day) => day >= data.meta.today) : all;
+  const { data, players, actuals, lineups, asOf } = useData();
+  const days = data ? allDays(data) : [];
   const [picked, setPicked] = useDay(days, data?.meta.today);
   const [tab, setTab] = useState<MatchupTab | null>(null);
   const [previewMoves, setPreviewMoves] = useState(noMoves);
@@ -60,7 +59,7 @@ function MatchupPage({ swap }: { swap: string | null }) {
   if (!picked) return <Empty>No games this week.</Empty>;
   const date = picked;
   const past = date < today;
-  const activeTab = tab ?? (past ? "lineups" : "impact");
+  const activeTab = tab ?? (swap && !past ? "impact" : "lineups");
   function switchTab(event: KeyboardEvent<HTMLButtonElement>, current: MatchupTab) {
     let next: MatchupTab;
     switch (event.key) {
@@ -75,7 +74,7 @@ function MatchupPage({ swap }: { swap: string | null }) {
     document.getElementById(`matchup-tab-${next}`)?.focus();
   }
   const future = date > today;
-  const onFinalDay = future && date === all.at(-1);
+  const onFinalDay = future && date === days.at(-1);
   const projection = past ? null : matchupProjection(data, players, asOf);
   const mineFinal = projection?.mine;
   const oppFinal = projection?.opponent;
@@ -92,7 +91,6 @@ function MatchupPage({ swap }: { swap: string | null }) {
   return (
     <div className="stack matchup-page">
       <h1 className="sr-only">Matchup</h1>
-      {example && <Link className="example-back" href="/example">← Video example</Link>}
       <div className="matchup-score-dock">
         {showCompactScore && (
           <section className="matchup-compact-score" aria-label="Matchup score" aria-live="polite">
@@ -127,7 +125,7 @@ function MatchupPage({ swap }: { swap: string | null }) {
             </span>}
             <b>{onFinalDay ? "Projected final" : future ? "Projected through" : past ? "Score through" : "Score now"}
               {date !== today && !onFinalDay && ` ${weekday(date)}`}</b>
-            <small>{margin == null ? "Score unavailable" : lead(margin)} · <span className="score-day-count">Day {score.through} of {all.length}</span></small>
+            <small>{margin == null ? "Score unavailable" : lead(margin)} · <span className="score-day-count">Day {score.through} of {days.length}</span></small>
           </div>
           <span key={`opponent-${date}`} className="num r score-value">{fmt0(score.opponent)}</span>
         </div>
@@ -174,7 +172,7 @@ function MatchupPage({ swap }: { swap: string | null }) {
           {past ? (
             <div className="card"><Empty>Choose today or a later day to see recommendations.</Empty></div>
           ) : (
-            <RecommendationImpact data={data} players={players} date={date} asOf={asOf} swap={swap} example={example}
+            <RecommendationImpact data={data} players={players} date={date} asOf={asOf} swap={swap}
               projection={projection} opponentName={opp.name} preview={previewMoves}
               onPreview={setPreviewMoves} />
           )}
@@ -184,7 +182,7 @@ function MatchupPage({ swap }: { swap: string | null }) {
   );
 }
 
-function RecommendationImpact({ data, players, date, asOf, swap, projection, opponentName, example, preview, onPreview }: {
+function RecommendationImpact({ data, players, date, asOf, swap, projection, opponentName, preview, onPreview }: {
   data: Data;
   players: Map<number, Player>;
   date: string;
@@ -192,7 +190,6 @@ function RecommendationImpact({ data, players, date, asOf, swap, projection, opp
   swap: string | null;
   projection: { mine: number; opponent: number } | null;
   opponentName: string;
-  example: boolean;
   preview: PreviewMoves;
   onPreview: (moves: PreviewMoves) => void;
 }) {
@@ -290,7 +287,7 @@ function RecommendationImpact({ data, players, date, asOf, swap, projection, opp
                   <li key={id} className="matchup-impact-swap" data-linked={id === (applied?.id ?? linkedId) || undefined}>
                     <div className="impact-pair">
                       <ImpactPlayer player={add} action={add.free_agent_status === "WAIVERS" ? "Claim" : "Add"}
-                        href={example ? undefined : `/free-agents/${add.id}`} />
+                        href={`/free-agents/${add.id}`} />
                       <Chevron dir="right" />
                       <ImpactPlayer player={drop} action="Drop" outgoing />
                     </div>
