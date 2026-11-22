@@ -335,6 +335,13 @@ export function addStart(data: Data, p?: Player): string {
   return next.toISOString().slice(0, 10);
 }
 
+/** A swap can be simulated when its first eligible day is inside a head-to-head matchup. */
+export function matchupSwapHref(data: Data, add: Player, drop: Player, example = false): string | null {
+  const date = addStart(data, add);
+  if (!data.opponent || data.matchup.is_bye || !weekDays(data).includes(date)) return null;
+  return `${example ? "/example" : ""}/matchup?day=${date}&swap=${add.id}-${drop.id}`;
+}
+
 /** His games this week that an add made now would count. */
 export function countableGames(data: Data, p: Player): number {
   const from = addStart(data, p);

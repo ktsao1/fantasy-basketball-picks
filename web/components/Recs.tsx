@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useData } from "@/lib/data";
 import { lastName, monthDay, signed, weekday } from "@/lib/format";
-import { addStart, countableGames, dropCaution, type DayView } from "@/lib/view";
+import { addStart, countableGames, dropCaution, matchupSwapHref, type DayView } from "@/lib/view";
 import { Card, Photo, Tag } from "./ui";
 
 /** Start/sit for the selected day: the moves to make on ESPN, or why none are needed. */
@@ -75,6 +75,7 @@ export function FreeAgency() {
   const add = top && players.get(top.add_player_id);
   const drop = top?.drop_player_id != null ? players.get(top.drop_player_id) : undefined;
   const caution = dropCaution(data, drop);
+  const previewHref = add && drop ? matchupSwapHref(data, add, drop) : null;
   const effective = add ? addStart(data, add) : data.meta.today;
   const addGames = add ? countableGames(data, add) : 0;
   const dropGames = drop?.game_dates_left?.filter((date) => date >= effective).length ?? 0;
@@ -109,6 +110,7 @@ export function FreeAgency() {
             {hot && <li><Image src="/img/pickup/trend.svg" width={16} height={16} alt="" unoptimized />Hot last 15 days</li>}
           </ul>
           {caution && <p className="caution">{caution}</p>}
+          {previewHref && <Link className="btn btn-secondary today-simulate" href={previewHref}>Simulate in Matchup <span aria-hidden>→</span></Link>}
           {rest.length > 0 && (
             <details className="today-pickup-alternatives">
               <summary className="section-label">Other options</summary>

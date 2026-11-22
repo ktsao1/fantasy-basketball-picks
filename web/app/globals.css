@@ -253,6 +253,7 @@ img { display: block; }
   gap: 8px 14px; min-height: 64px; padding: 10px 14px; border-radius: 10px; background: var(--accent-soft);
 }
 .today-pickup-lead:hover { background: var(--line); }
+.today-simulate { justify-self: start; }
 .today-pickup-arrow { color: var(--accent-ink); }
 .today-pickup-lead b { display: block; font-weight: 650; }
 .today-pickup-lead small { display: block; font-size: 12px; color: var(--muted); }
