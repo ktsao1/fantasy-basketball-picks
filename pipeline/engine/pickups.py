@@ -94,10 +94,20 @@ def recommend_pickups(data, players, projections, value_of, slots) -> list[dict[
             bits.append("on waivers, so it takes a day to clear")
         conf = confidence.for_choice([(fa, pf)], margin=score)
         sd = sqrt(sum(variance_on(fa, pf, d) for d in days) + sum(variance_on(drop, pd, d) for d in days))
+        swapped = [r for r in roster if r["player_id"] != drop["id"]] + [{"player_id": fa["id"], "lineup_slot": "BE"}]
+        preview = {}
+        for d in days:
+            lineup = best_day(d, swapped, players, value_of, slots, d == today)
+            preview[d] = [
+                {"slot": slot, "player_id": pid,
+                 "projected_fpts": None if slot in lineup.locked else round(lineup.values[pid], 1)}
+                for slot, pid in lineup.assignment.items() if pid is not None
+            ]
         out.append(
             {
                 "add_player_id": fa["id"],
                 "drop_player_id": drop["id"],
+                "lineup_preview": preview,
                 "gain_this_week": round(gain_week, 1),
                 "gain_this_week_range": [round(gain_week - RANGE_Z * sd, 1), round(gain_week + RANGE_Z * sd, 1)],
                 "gain_rest_of_season": round(gain_ros, 1),

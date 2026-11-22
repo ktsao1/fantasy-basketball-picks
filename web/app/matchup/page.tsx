@@ -1,9 +1,12 @@
 "use client";
 
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { DayStepper, Empty, Photo, Tag, useDay, usePageTitle } from "@/components/ui";
 import { useData } from "@/lib/data";
 import { dayShort, fmt, monthDay, signed, weekday } from "@/lib/format";
-import { dayView, gameLine, pastDay, scenarios, scoreThroughDate, sideDay, weekDays as allDays } from "@/lib/view";
+import type { Data, Player } from "@/lib/types";
+import { dayView, gameLine, gameOn, matchupProjection, pastDay, scoreThroughDate, sideDay, slotType, weekDays as allDays, type SideDay } from "@/lib/view";
+import { emptyRosterPreview, playerLocked, playerProjection, previewDay, rosterSlots, rosterThrough, stageTransaction, transactionDate } from "@/lib/roster-preview";
 
 const fmt0 = (n: number | null | undefined) => (n == null ? "—" : Math.round(n).toLocaleString("en-US"));
 
@@ -12,27 +15,60 @@ export default function MatchupPage() {
   const { data, players, actuals, lineups } = useData();
   const days = data ? allDays(data) : [];
   const [picked, setPicked] = useDay(days, data?.meta.today);
+  const [recommended, setRecommended] = useState(false);
+  const [preview, setPreview] = useState(emptyRosterPreview);
+  const [previewError, setPreviewError] = useState<string | undefined>();
+  const [showCompactScore, setShowCompactScore] = useState(false);
+  const scoreboard = useRef<HTMLElement>(null);
+  const matchupReady = !!data?.opponent && !data.matchup.is_bye && !!picked;
+  useEffect(() => {
+    const banner = scoreboard.current;
+    if (!matchupReady || !banner) return;
+
+    const observer = new IntersectionObserver(([entry]) => {
+      setShowCompactScore(entry.boundingClientRect.bottom <= 0);
+    });
+    observer.observe(banner);
+    return () => observer.disconnect();
+  }, [matchupReady]);
   if (!data) return null;
   const m = data.matchup;
   const opp = data.opponent;
   if (m.is_bye || !opp) return <Empty>Bye week: no opponent this week.</Empty>;
 
-  const proj = data.recommendations.matchup_projection ?? m.projected ?? null;
   const me = data.my_team;
   const today = data.meta.today;
-  // The engine's projection: the rest of the week with the recommended moves.
-  const moves = scenarios(data, players)?.find((x) => x.plan === "moves");
-  const mineFinal = moves?.mine ?? proj?.mine ?? null;
-  const oppFinal = proj?.opponent ?? null;
-  const pWin = moves?.win ?? proj?.win_probability ?? null;
   if (!picked) return <Empty>No games this week.</Empty>;
   const date = picked;
   const past = date < today;
   const future = date > today;
-  const score = scoreThroughDate(data, players, actuals, lineups, date);
+  const previewDays = new Map(days.filter((day) => day >= today).map((day) =>
+    [day, previewDay(data, players, preview, day, recommended)] as const));
+  const mySide = previewDays.get(date);
+  const changed = recommended || preview.transactions.length > 0 || Object.values(preview.moves).some((moves) => moves.length > 0);
+  const projection = past ? null : matchupProjection(data, players, previewDays);
+  const stage = (add?: Player, drop?: number) => {
+    const effective = transactionDate(data, date, add);
+    const result = stageTransaction(data, players, preview, { date: effective, add: add?.id, drop });
+    setPreviewError(result.error);
+    if (!result.transactions) return false;
+    setPreview({ ...preview, transactions: result.transactions });
+    return true;
+  };
+  const setSlot = (player: number, slot: string | null) => {
+    setPreviewError(undefined);
+    setPreview((current) => ({
+      ...current,
+      moves: { ...current.moves, [date]: [...(current.moves[date] ?? []), { player, slot }] },
+    }));
+  };
+  const mineFinal = projection?.mine;
+  const oppFinal = projection?.opponent;
+  const pWin = projection?.win;
+  const score = scoreThroughDate(data, players, actuals, lineups, date, previewDays);
   const hasStarted = !past && !future && data.players.some((player) => player.game_today_locked);
   const status = past ? (actuals[date] ? "Final" : "Awaiting results") : hasStarted ? "Live / projected" : "Projected";
-  const margin = score.mine == null || score.opponent == null ? null : score.mine - score.opponent;
+  const margin = score.mine == null || score.opponent == null ? null : Math.round(score.mine) - Math.round(score.opponent);
   const lead = (x: number) => (x === 0 ? "Tied" : x > 0 ? `Up ${fmt0(x)}` : `Down ${fmt0(-x)}`);
   const projectedMargin = mineFinal == null || oppFinal == null ? null : Math.round(mineFinal) - Math.round(oppFinal);
   const verdict =
@@ -40,22 +76,29 @@ export default function MatchupPage() {
       : projectedMargin === 0 ? "Projected tie"
         : `${projectedMargin > 0 ? "You’re" : `${opp.name} is`} projected to win by ${fmt0(Math.abs(projectedMargin))}`;
   const youPct = pWin != null ? Math.round(pWin * 100) : null;
-  const pointShare = mineFinal != null && oppFinal != null && mineFinal >= 0 && oppFinal >= 0 && mineFinal + oppFinal > 0
-    ? (100 * mineFinal) / (mineFinal + oppFinal)
-    : null;
-  const roundedShare = Math.round((pointShare ?? 0) * 10) / 10;
-
   return (
-    <div className="stack" style={{ gap: 24 }}>
+    <div className="stack matchup-page" style={{ gap: 24 }}>
       <h1 className="sr-only">Matchup</h1>
-      <section className="score-band on-dark" aria-label="Score">
+      <div className="matchup-score-dock">
+        {showCompactScore && (
+          <section className="matchup-compact-score" aria-label="Matchup score" aria-live="polite">
+            <div><span>Your Team</span><strong className="num">{fmt0(mineFinal ?? score.mine)}</strong></div>
+            <div className="matchup-compact-caption">
+              <b>{projection ? "Projected final" : `Score through ${weekday(date)}`}</b>
+              {projection && <small>{future ? `Through ${weekday(date)}` : "ESPN score"} · {fmt0(score.mine)}–{fmt0(score.opponent)}</small>}
+            </div>
+            <div><span>{opp.name}</span><strong className="num">{fmt0(oppFinal ?? score.opponent)}</strong></div>
+          </section>
+        )}
+      </div>
+      <section ref={scoreboard} className="score-band on-dark" aria-label="Score">
         <div className="teams">
           <Team init="YT" name="Your Team" sub={`${me.wins}–${me.losses}${me.standing ? ` · ${ordinal(me.standing)}` : ""}`} color="var(--accent-on-dark)" />
           <span className="pill-week">Week {m.matchup_period} · {days.length - score.through + Number(date === today)} days left</span>
           <Team init={initialsOf(opp.name)} name={opp.name} sub={`${opp.wins}–${opp.losses}${opp.standing ? ` · ${ordinal(opp.standing)}` : ""}`} color="var(--opp-on-dark)" right />
         </div>
 
-        <div className={`score-row${future ? " score-projected" : ""}`} aria-live="polite">
+        <div className={`score-row${future ? " score-projected" : ""}`} aria-live={showCompactScore ? "off" : "polite"}>
           <span className="num">{fmt0(score.mine)}</span>
           <div className="mid">
             {!future && <span className="src src-espn src-logo">
@@ -69,7 +112,7 @@ export default function MatchupPage() {
           <span className="num r">{fmt0(score.opponent)}</span>
         </div>
 
-        {!past && <div className="proj-row">
+        {!past && <div className="proj-row" aria-live={showCompactScore ? "off" : "polite"}>
           <span className="proj-total"><span className="num">{fmt0(mineFinal)}</span> proj. total</span>
           <div className="proj-verdict">
             {verdict && <h2 className="verdict-line">{verdict}</h2>}
@@ -77,40 +120,132 @@ export default function MatchupPage() {
           </div>
           <span className="proj-total r">proj. total <span className="num">{fmt0(oppFinal)}</span></span>
         </div>}
-
-        {!past && pointShare != null && (
-          <div className="point-share">
-            <div className="point-share-bar" role="img" aria-label={`Projected point share: you ${fmt(roundedShare)}%, ${opp.name} ${fmt(100 - roundedShare)}%`}>
-              {pointShare > 0 && <span style={{ flexGrow: pointShare, background: "var(--accent-on-dark)" }} />}
-              {pointShare < 100 && <span style={{ flexGrow: 100 - pointShare, background: "var(--opp-on-dark)" }} />}
-            </div>
-            <div className="point-share-labels" aria-hidden>
-              <span>{fmt(roundedShare)}%</span>
-              <span>Projected point share</span>
-              <span>{fmt(100 - roundedShare)}%</span>
-            </div>
-          </div>
-        )}
       </section>
 
-      <div className="matchup-date">
-        <DayStepper days={days} value={date} onChange={setPicked} today={today}
+      <div className="matchup-toolbar">
+        <DayStepper days={days} value={date} onChange={(day) => { setPreviewError(undefined); setPicked(day); }} today={today}
           label={(d) => ({ day: weekday(d), date: d === today ? dayShort(d) : monthDay(d) })}
           status={status} />
-        {!past && <p className="matchup-assumption">Projections use recommended starters on both teams.</p>}
+        {!past && changed && (
+          <button type="button" className="chip" onClick={() => {
+            setPreview(emptyRosterPreview);
+            setRecommended(false);
+            setPreviewError(undefined);
+          }}>Reset preview</button>
+        )}
       </div>
 
       <div className="rosters">
-        {date < today ? (
+        {past ? (
           <>
             <PastSide title="You" color="var(--accent)" date={date} mine />
             <PastSide title={opp.name} color="var(--opp)" date={date} />
           </>
         ) : (
           <>
-            <Side title="You" color="var(--accent)" date={date} mine />
+            <Side title="You" color="var(--accent)" date={date} mine previewSide={mySide} recommended={recommended}
+              onRecommended={setRecommended} onSlot={setSlot} onDrop={(id) => stage(undefined, id)}
+              previewed={changed}>
+              <RosterPickups data={data} players={players} date={date} transactions={preview.transactions}
+                excluded={new Set(preview.transactions.flatMap((move) => move.add === undefined ? [] : [move.add]))}
+                onAdd={stage} />
+              {previewError && <p className="matchup-preview-error" role="alert">{previewError}</p>}
+              {preview.transactions.length > 0 && (
+                <ul className="matchup-transaction-log" aria-label="Preview roster moves">
+                  {preview.transactions.map((move, index) => (
+                    <li key={index}>
+                      {move.add !== undefined && `Add ${players.get(move.add)?.name}`}
+                      {move.add !== undefined && move.drop !== undefined && " · "}
+                      {move.drop !== undefined && `Drop ${players.get(move.drop)?.name}`}
+                      { ` · ${monthDay(move.date)}`}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Side>
             <Side title={opp.name} color="var(--opp)" date={date} />
           </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RosterPickups({ data, players, date, transactions, excluded, onAdd }: {
+  data: Data;
+  players: Map<number, Player>;
+  date: string;
+  transactions: Parameters<typeof rosterThrough>[1];
+  excluded: Set<number>;
+  onAdd: (player: Player, drop?: number) => boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [candidateId, setCandidateId] = useState<number>();
+  const [dropId, setDropId] = useState<number>();
+  const candidate = candidateId === undefined ? undefined : players.get(candidateId);
+  const picks = new Map(data.recommendations.pickups.map((pickup, index) => [pickup.add_player_id, { pickup, index }]));
+  const agents = [...players.values()].filter((player) =>
+    player.owner === null && !excluded.has(player.id) && player.name.toLowerCase().includes(query.trim().toLowerCase()),
+  ).sort((a, b) => (picks.get(a.id)?.index ?? Infinity) - (picks.get(b.id)?.index ?? Infinity)
+    || (a.free_agent_rank ?? Infinity) - (b.free_agent_rank ?? Infinity) || a.name.localeCompare(b.name));
+  const effective = candidate ? transactionDate(data, date, candidate) : date;
+  const roster = rosterThrough(data, transactions, effective);
+
+  return (
+    <div className="matchup-roster-pickups">
+      <button type="button" className="chip matchup-edit" aria-expanded={open} aria-controls="matchup-pickups"
+        onClick={() => setOpen(!open)}>
+        {open ? "Hide free agents" : "+ Add free agent"}
+      </button>
+      <div id="matchup-pickups" hidden={!open}>
+        <input type="search" className="matchup-preview-input" aria-label="Search available free agents" placeholder="Search free agents"
+          value={query} onChange={(event) => setQuery(event.target.value)} />
+        <div className="matchup-pickups" role="group" aria-label="Available free agents">
+          {agents.map((agent) => {
+            const pick = picks.get(agent.id);
+            const suggested = pick?.pickup.drop_player_id;
+            const gain = pick?.pickup.gain_this_week;
+            return (
+              <button type="button" className="matchup-pickup" key={agent.id} aria-pressed={agent.id === candidateId}
+                onClick={() => {
+                  setCandidateId(agent.id);
+                  const available = rosterThrough(data, transactions, transactionDate(data, date, agent));
+                  setDropId(suggested != null && available.some((r) => r.player_id === suggested) ? suggested : undefined);
+                }}>
+                <Photo p={agent} size={38} round />
+                <span className="matchup-pickup-player">
+                  <strong>{agent.name}</strong>
+                  {pick?.index === 0 && <Tag tone="rec-soft">Recommended</Tag>}
+                  <small>{agent.free_agent_status === "WAIVERS" ? "Waivers" : agent.nba_team}
+                    {suggested != null && ` · Suggested drop: ${players.get(suggested)?.name}`}
+                  </small>
+                </span>
+                <span className="matchup-pickup-points" data-gain={gain === undefined ? undefined : Math.sign(gain)}>
+                  {gain !== undefined && <><span className="num">{signed(gain)}</span><small>est. gain</small></>}
+                </span>
+                <span className="matchup-pickup-symbol" aria-hidden>+</span>
+              </button>
+            );
+          })}
+          {agents.length === 0 && <Empty>No matching free agents.</Empty>}
+        </div>
+        {candidate && !excluded.has(candidate.id) && (
+          <form className="matchup-add-form" onSubmit={(event) => {
+            event.preventDefault();
+            if (onAdd(candidate, dropId)) { setCandidateId(undefined); setDropId(undefined); }
+          }}>
+            <p><strong>Add {candidate.name}</strong> · Counts from {monthDay(effective)}
+              {effective > (allDays(data).at(-1) ?? effective) && " (after this matchup)"}
+            </p>
+            <label>Player to drop
+              <select className="matchup-preview-input" value={dropId ?? ""} onChange={(event) => setDropId(event.target.value ? Number(event.target.value) : undefined)}>
+                <option value="">No drop</option>
+                {roster.map((entry) => <option key={entry.player_id} value={entry.player_id}>{players.get(entry.player_id)?.name}</option>)}
+              </select>
+            </label>
+            <button type="submit" className="chip matchup-edit">Preview add</button>
+          </form>
         )}
       </div>
     </div>
@@ -164,43 +299,72 @@ function PastSide({ title, color, date, mine = false }: { title: string; color: 
   );
 }
 
-function Side({ title, color, date, mine = false }: { title: string; color: string; date: string; mine?: boolean }) {
+function Side({ title, color, date, mine = false, previewSide, recommended = true, onRecommended, onSlot, onDrop, previewed, children }: {
+  title: string;
+  color: string;
+  date: string;
+  mine?: boolean;
+  previewSide?: SideDay;
+  recommended?: boolean;
+  onRecommended?: (enabled: boolean) => void;
+  onSlot?: (id: number, slot: string | null) => void;
+  onDrop?: (id: number) => void;
+  previewed?: boolean;
+  children?: ReactNode;
+}) {
   const { data, players } = useData();
   if (!data) return null;
-  const v = mine ? dayView(data, players, date) : null;
-  const s = sideDay(data, players, date, mine);
+  const s = previewSide ?? sideDay(data, players, date, mine);
   const theirs = mine ? sideDay(data, players, date, false) : null;
   const when = date === data.meta.today ? "today" : weekday(date);
-  const moves = v?.moves.length ?? 0;
   const hasStarted = s.rows.some((row) => row.started);
+  const moves = mine ? dayView(data, players, date).moves : [];
+  const recommendedMoves = new Map(moves.map((move) => [move.start.id, move]));
+  const bench = s.off.map((player) => playerProjection(data, player, date))
+    .sort((a, b) => (b.value ?? b.scored ?? -1) - (a.value ?? a.scored ?? -1));
+  const actions = (player: Player, currentSlot?: string) => {
+    if (!onSlot || !onDrop) return undefined;
+    const locked = playerLocked(data, player, date);
+    const eligible = data.my_team.roster.find((entry) => entry.player_id === player.id)?.lineup_slot !== "IR";
+    const options = locked || !eligible ? [] : rosterSlots(data).flatMap((slot) => {
+      const occupant = s.rows.find((row) => row.slot === slot);
+      if (slot === currentSlot || !player.positions.includes(slotType(slot)) || occupant?.started) return [];
+      return [{ slot, label: occupant ? `${slot} · bench ${occupant.player.name}` : slot }];
+    });
+    return (
+      <details className="matchup-player-actions" name="matchup-player-actions">
+        <summary className="chip" aria-label={`Actions for ${player.name}`}>Actions</summary>
+        <div className="matchup-player-menu">
+          {options.length > 0 && (
+            <div className="matchup-start-options" role="group" aria-label={`Start ${player.name}`}>
+              {options.map((option) => (
+                <button key={option.slot} type="button" onClick={(event) => {
+                  event.currentTarget.closest("details")?.removeAttribute("open");
+                  onSlot(player.id, option.slot);
+                }}>Start at {option.label}</button>
+              ))}
+            </div>
+          )}
+          {currentSlot && !locked && <button type="button" className="chip" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); onSlot(player.id, null); }}>Bench</button>}
+          <button type="button" className="chip" onClick={() => onDrop(player.id)}>Preview drop</button>
+          {locked && <small>Lineup locked for this game</small>}
+        </div>
+      </details>
+    );
+  };
   return (
     <section className="card rows" style={{ padding: "18px 24px 8px" }} aria-label={`${title}, ${when}`}>
       <div className="roster-head">
         <span className="dot" style={{ background: color }} />
         <b>{title}</b>
+        {previewed && <Tag tone="rec-soft">Preview</Tag>}
       </div>
-      {mine && v && moves > 0 && (
-        <p className="side-note">
-          With your {moves === 1 ? "recommended move" : `${moves} recommended moves`} ({fmt(v.asSet)} as set on ESPN).
-        </p>
-      )}
       {!s.available && <Empty>Their daily lineup isn&rsquo;t in this snapshot.</Empty>}
       {s.available && s.rows.length === 0 && <Empty>Nobody plays {when}.</Empty>}
-      {s.rows.map(({ player: p, value, scored, started }) => (
-        <div className="row" key={p.id} style={{ padding: "8px 0" }}>
-          <Photo p={p} size={40} round />
-          <div className="who">
-            <div className="who-top">
-              <strong>{p.name}</strong>
-              {p.injury_status === "DAY_TO_DAY" && <Tag tone="warn">Day-to-day</Tag>}
-            </div>
-            <small>{gameLine(p, date) ?? p.nba_team}</small>
-          </div>
-          <div className={`proj ${started ? "match-actual" : "match-projected"}`}>
-            <span className="num" style={{ fontSize: 24 }}>{fmt(value ?? scored)}</span>
-            {hasStarted && <small>{started ? "Scored" : "Proj."}</small>}
-          </div>
-        </div>
+      {s.rows.map(({ player, value, scored, started, slot }) => (
+        <MatchupPlayer key={player.id} player={player} date={date} slot={mine ? slot : undefined}
+          value={value ?? scored} pointsLabel={hasStarted ? (started ? "Scored" : "Proj.") : undefined}
+          actions={actions(player, slot)} />
       ))}
       {s.available && (
         <div className="total-row">
@@ -213,8 +377,63 @@ function Side({ title, color, date, mine = false }: { title: string; color: stri
           <span className="num">{fmt(s.total)}</span>
         </div>
       )}
-      {s.available && <SittingOut names={s.off.map((p) => p.name)} />}
+      {s.available && bench.length > 0 && (
+        <div className="matchup-bench">
+          <div className="matchup-bench-head">
+            <h3>Bench</h3>
+            {onRecommended && (
+              <label className="matchup-starter-control">
+                <input type="checkbox" checked={recommended} onChange={(event) => onRecommended(event.target.checked)} />
+                Use recommended starters
+              </label>
+            )}
+          </div>
+          <div className="rows">
+            {bench.map(({ player, value, scored, started }) => {
+              const move = recommendedMoves.get(player.id);
+              return (
+                <MatchupPlayer key={player.id} player={player} date={date} value={value ?? scored} dim={!gameOn(player, date)}
+                  pointsLabel={started ? "Scored" : "Proj."} marker={move ? `Start at ${move.slot}` : undefined}
+                  note={move?.out ? `For ${move.out.name}` : undefined} actions={actions(player)} />
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {children}
     </section>
+  );
+}
+
+function MatchupPlayer({ player, date, slot, value, pointsLabel, marker, note, actions, dim = false }: {
+  player: Player;
+  date: string;
+  slot?: string;
+  value: number | null;
+  pointsLabel?: string;
+  marker?: string;
+  note?: string;
+  actions?: ReactNode;
+  dim?: boolean;
+}) {
+  return (
+    <div className={`row matchup-player${dim ? " dim" : ""}`}>
+      {slot && <span className="slot" aria-label={`Slot ${slot}`}>{slot}</span>}
+      <Photo p={player} size={40} round dim={dim} />
+      <div className="who">
+        <div className="who-top">
+          <strong>{player.name}</strong>
+          {marker && <Tag tone="rec-soft">{marker}</Tag>}
+          {player.injury_status === "DAY_TO_DAY" && <Tag tone="warn">Day-to-day</Tag>}
+        </div>
+        <small>{gameLine(player, date) ?? `${player.nba_team} · No game`}{note && ` · ${note}`}</small>
+      </div>
+      <div className={`proj ${pointsLabel === "Scored" ? "match-actual" : "match-projected"}`}>
+        <span className="num">{fmt(value)}</span>
+        {value != null && pointsLabel && <small>{pointsLabel}</small>}
+      </div>
+      {actions}
+    </div>
   );
 }
 

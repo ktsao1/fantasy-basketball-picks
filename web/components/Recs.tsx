@@ -1,34 +1,23 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useData } from "@/lib/data";
-import { fmt, lastName, signed, weekday } from "@/lib/format";
-import { addTiming, dropCaution, nextMoves, pickupValue, pts, type DayView } from "@/lib/view";
-import { Card, Chevron, Meter, Photo, Tag } from "./ui";
+import { lastName, signed, weekday } from "@/lib/format";
+import { addStart, countableGames, dropCaution, type DayView } from "@/lib/view";
+import { Card, Photo, Tag } from "./ui";
 
-/** Start/sit for today: the moves to make on ESPN, or why none are needed. */
+/** Start/sit for the selected day: the moves to make on ESPN, or why none are needed. */
 export function StartSit({ v }: { v: DayView }) {
-  const { data, players } = useData();
+  const { data } = useData();
   const n = v.moves.length;
-  // Nothing to do on this day: point at the next day that has moves, so they aren't missed.
-  const next = n === 0 && data ? nextMoves(data, players, v.date) : null;
+  const when = v.date === data?.meta.today ? "tonight" : weekday(v.date);
   return (
     <Card title="Start / sit" aside={n > 0 && <Tag tone="rec-soft">{n} recommended {n === 1 ? "move" : "moves"}</Tag>}>
       {n === 0 ? (
-        <>
-          <p>No changes needed tonight.</p>
-          {next && (
-            <Link className="next-moves" href={`/matchup?day=${next.date}`}>
-              <span>
-                <b>{weekday(next.date)}: {next.moves.length} {next.moves.length === 1 ? "change" : "changes"}</b>
-                <small>{signed(next.withMoves - next.asSet)} proj. pts over the lineup as set</small>
-              </span>
-              <Chevron dir="right" />
-            </Link>
-          )}
-        </>
+        <p>No changes needed {when}.</p>
       ) : (
-        <p>Make {n === 1 ? "this change" : `these ${n} changes`} on ESPN before tip-off.</p>
+        <p>Make {n === 1 ? "this change" : `these ${n} changes`} on ESPN before tip-off {when}.</p>
       )}
       <div className="rows" style={{ marginTop: n || v.watch.length ? 12 : 0 }}>
         {v.moves.map((m) => {
@@ -79,28 +68,31 @@ export function StartSit({ v }: { v: DayView }) {
 }
 
 /** The week's best free-agent swap, with the alternatives. */
-export function FreeAgency({ isToday = true }: { isToday?: boolean }) {
+export function FreeAgency() {
   const { data, players } = useData();
   if (!data) return null;
-  const [top, ...rest] = data.recommendations.pickups.slice(0, 5); // Keep Today's shortlist compact.
+  const [top, ...rest] = data.recommendations.pickups.slice(0, 5);
   const add = top && players.get(top.add_player_id);
   const drop = top?.drop_player_id != null ? players.get(top.drop_player_id) : undefined;
-  // The caution is about making the move right now, so it belongs on today's view only.
-  const caution = isToday ? dropCaution(data, drop) : null;
-  // The single biggest reason, in words; the detail page has the rest.
-  const lead = top?.factors?.find((f) => f.impact_fpts != null) ?? top?.factors?.[0];
-  const why = lead?.label ? pts(lead.label[0].toUpperCase() + lead.label.slice(1)) : null;
+  const caution = dropCaution(data, drop);
+  const effective = add ? addStart(data, add) : data.meta.today;
+  const addGames = add ? countableGames(data, add) : 0;
+  const dropGames = drop?.game_dates_left?.filter((date) => date >= effective).length ?? 0;
+  const addPPG = add?.projection.engine_fpts_per_game;
+  const dropPPG = drop?.projection.engine_fpts_per_game;
+  const recent = add?.stats.last_15?.fpts_avg;
+  const season = add?.stats.season?.fpts_avg;
+  const hot = recent != null && season != null && (add?.stats.last_15?.gp ?? 0) >= 3 && recent > season;
 
   return (
-    <Card
-      title="Free agency"
-      aside={<span className="muted" style={{ fontSize: 12 }}>{addTiming(data)}</span>}
-    >
+    <Card title="Free agency" className="today-free-agency" aside={add && (
+      <Link className="today-pickup-details" href={`/free-agents/${add.id}`}>View details <span aria-hidden>→</span></Link>
+    )}>
       {!top || !add ? (
         <p className="muted">No free agent beats anyone on your roster this week.</p>
       ) : (
-        <div style={{ display: "grid", gap: 16 }}>
-          <Link href={`/free-agents/${add.id}`} className="swap">
+        <div className="today-pickup-content">
+          <div className="swap">
             <div className="swap-player">
               <Photo p={add} w={112} h={84} />
               <div>
@@ -109,46 +101,44 @@ export function FreeAgency({ isToday = true }: { isToday?: boolean }) {
                 <span>{add.nba_team} · {add.primary_position}</span>
               </div>
             </div>
-            <span className="muted" aria-hidden style={{ paddingBottom: 44 }}>&rarr;</span>
             {drop && (
-              <div className="swap-player out">
-                <Photo p={drop} w={112} h={84} dim />
-                <div>
-                  <small>Drop</small>
-                  <b>{drop.name}</b>
-                  <span>{drop.nba_team} · {drop.primary_position}</span>
+              <>
+                <span className="today-pickup-arrow" aria-hidden>→</span>
+                <div className="swap-player out">
+                  <Photo p={drop} w={112} h={84} dim />
+                  <div>
+                    <small>Drop</small>
+                    <b>{drop.name}</b>
+                    <span>{drop.nba_team} · {drop.primary_position}</span>
+                  </div>
                 </div>
-              </div>
+              </>
             )}
-            <div className="gain">
-              <span className="gain-pill"><span className="num">{signed(top.gain_this_week)}</span></span>
-              <small>proj. pts this week</small>
-            </div>
-          </Link>
-          {why && <p className="muted" style={{ fontSize: 13 }}>{why}</p>}
-          {caution && <p className="caution">{caution}</p>}
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <Meter c={top.confidence} />
-            <Link href={`/free-agents/${add.id}`} className="btn" style={{ marginLeft: "auto" }}>See why</Link>
           </div>
+          <ul className="today-pickup-factors" aria-label="Pickup factors">
+            <li><Image src="/img/pickup/calendar.svg" width={16} height={16} alt="" unoptimized />
+              {addGames} {addGames === 1 ? "game" : "games"}{drop && ` vs ${dropGames}`}
+            </li>
+            {addPPG != null && dropPPG != null && (
+              <li><Image src="/img/pickup/bars.svg" width={16} height={16} alt="" unoptimized />{signed(addPPG - dropPPG)} ppg</li>
+            )}
+            {hot && <li><Image src="/img/pickup/trend.svg" width={16} height={16} alt="" unoptimized />Hot last 15 days</li>}
+          </ul>
+          {caution && <p className="caution">{caution}</p>}
           {rest.length > 0 && (
-            <div style={{ borderTop: "1px solid var(--line)", paddingTop: 12 }}>
-              <p className="section-label options-head"><span>Other options</span><span>Value · this week</span></p>
-              {rest.map((x) => {
-                const p = players.get(x.add_player_id);
-                const d = x.drop_player_id != null ? players.get(x.drop_player_id) : undefined;
-                if (!p) return null;
+            <div className="today-pickup-alternatives">
+              <h3 className="section-label">Other options</h3>
+              {rest.map((option) => {
+                const player = players.get(option.add_player_id);
+                const drop = option.drop_player_id == null ? undefined : players.get(option.drop_player_id);
+                if (!player) return null;
                 return (
-                  <Link href={`/free-agents/${p.id}`} className="option" key={p.id}>
-                    <Photo p={p} size={34} round />
+                  <Link href={`/free-agents/${player.id}`} className="option" key={player.id}>
+                    <Photo p={player} size={34} round />
                     <div className="who">
-                      <b style={{ fontSize: 13, fontWeight: 600 }}>{p.name}</b>
-                      <small>{p.nba_team} · {p.primary_position}{d && d.id !== drop?.id ? ` · drop ${lastName(d.name)}` : ""}</small>
+                      <b>{player.name}</b>
+                      <small>{player.nba_team} · {player.primary_position}{drop && ` · drop ${lastName(drop.name)}`}</small>
                     </div>
-                    <span className="option-nums">
-                      <span className="num">{fmt(pickupValue(data, x))}</span>
-                      <small>{signed(x.gain_this_week)} this week</small>
-                    </span>
                   </Link>
                 );
               })}

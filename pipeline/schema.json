@@ -302,6 +302,23 @@
             "null"
           ]
         },
+        "lineup_preview": {
+          "description": "Simulated starting slots keyed by eligible matchup date.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["slot", "player_id", "projected_fpts"],
+              "properties": {
+                "slot": { "type": "string" },
+                "player_id": { "type": "integer" },
+                "projected_fpts": { "type": ["number", "null"] }
+              }
+            }
+          }
+        },
         "gain_this_week": {
           "type": "number"
         },
