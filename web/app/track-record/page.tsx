@@ -35,19 +35,18 @@ function Record({ r }: { r: TrackRecord }) {
   // One scale for every row, so ranges and misses compare at a glance.
   const max = Math.ceil(Math.max(...graded.map((c) => Math.max(c.range[1], c.actual!, c.projected)), 10) / 10) * 10;
   const min = Math.floor(Math.min(...graded.map((c) => Math.min(c.range[0], c.actual!, c.projected)), 0) / 10) * 10;
-  const coverage = s.graded ? `${Math.round(100 * s.within_range / s.graded)}%` : "—";
 
   return (
     <div className="stack" style={{ gap: 24 }}>
       <section className="band tr-band on-dark" aria-label="Summary">
         <div className="tr-head">
           <h1 className="band-title">Track record</h1>
-          <p className="band-sub">{s.graded ? `${s.graded} calls graded across ${s.days_graded.length} ${s.days_graded.length === 1 ? "day" : "days"}` : "Nothing graded yet"}</p>
+          <p className="band-sub">{s.graded ? `${s.graded} starter forecasts graded across ${s.days_graded.length} ${s.days_graded.length === 1 ? "day" : "days"}` : "Nothing graded yet"}</p>
         </div>
         <dl className="tr-stats">
           <div>
-            <dt>Inside the 80% range</dt>
-            <dd><span className="num">{coverage}</span><small>{s.graded ? `${s.within_range} of ${s.graded} calls` : "Awaiting results"}</small></dd>
+            <dt>Starter forecasts inside the 80% range</dt>
+            <dd><span className="num">{s.graded ? `${s.within_range} of ${s.graded}` : "—"}</span>{!s.graded && <small>Awaiting results</small>}</dd>
           </div>
           <div>
             <dt>Average miss</dt>

@@ -2,7 +2,7 @@
 // Runs before `dev` and `build`. Source is ../data, or DATA_DIR if set
 // (handy for pointing the dashboard at a local sample while developing).
 //
-// Copies: latest.json, track_record.json, actuals.json and lineups.json.
+// Copies the live league data and the fixed snapshot from the submission video.
 
 import { copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -21,6 +21,10 @@ if (!existsSync(latest)) {
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 copyFileSync(latest, join(out, "latest.json"));
+
+// This is the dated Mo Bamba swap from the submission video.
+const example = join(here, "..", "..", "data", "snapshots", "2026-11-21-1720.json");
+copyFileSync(example, join(out, "submission-example.json"));
 // The graded record of past calls (pipeline/track_record.py); optional.
 const record = join(src, "track_record.json");
 if (existsSync(record)) copyFileSync(record, join(out, "track_record.json"));

@@ -1,5 +1,5 @@
 import type { Data, Player, RosterEntry } from "./types";
-import { addStart, gameOn, slotType, type SideDay } from "./view";
+import { addStart, playerLocked, playerPoints, slotType, type SideDay } from "./view";
 
 type Transaction = { date: string; add?: number; drop?: number };
 type Move = { player: number; slot: string | null };
@@ -27,31 +27,8 @@ export function rosterThrough(data: Data, transactions: Transaction[], date: str
   return [...roster.values()];
 }
 
-export function playerLocked(data: Data, player: Player, date: string): boolean {
-  if (date !== data.meta.today) return false;
-  const game = gameOn(player, date);
-  return !!(player.game_today_locked || game?.started || (game?.start_utc && Date.parse(game.start_utc) <= Date.now()));
-}
-
-export function playerProjection(data: Data, player: Player, date: string, slot = "BE"): SideDay["rows"][number] {
-  const started = playerLocked(data, player, date);
-  const game = gameOn(player, date);
-  // Match the engine's availability and back-to-back adjustments for arbitrary players.
-  const availability: Record<string, number> = {
-    ACTIVE: 1, PROBABLE: 0.9, DAY_TO_DAY: 0.65, QUESTIONABLE: 0.55, DOUBTFUL: 0.2,
-    OUT: 0, INJURY_RESERVE: 0, SUSPENSION: 0,
-  };
-  const chance = availability[player.injury_status ?? "ACTIVE"] ?? 0.8;
-  const rest = player.back_to_back_dates?.includes(date) ? 0.95 : 1;
-  const average = player.projection.engine_fpts_per_game;
-  const value = !started && game && slot !== "IR" && chance > 0 && average != null
-    ? Math.round(average * chance * rest * 10) / 10
-    : null;
-  return { player, slot, value, scored: started ? player.points_today ?? null : null, started };
-}
-
 /** The roster and lineup resulting from the preview for one selected day. */
-export function previewDay(data: Data, players: Map<number, Player>, preview: RosterPreview, date: string, recommended: boolean): SideDay {
+export function previewDay(data: Data, players: Map<number, Player>, preview: RosterPreview, date: string, recommended: boolean, asOf: number): SideDay {
   const roster = rosterThrough(data, preview.transactions, date);
   const eligible = new Map(roster.filter((r) => r.lineup_slot !== "IR").map((r) => [r.player_id, r]));
   const slots = rosterSlots(data);
@@ -65,16 +42,17 @@ export function previewDay(data: Data, players: Map<number, Player>, preview: Ro
   }
   const locked = new Set([...eligible.keys()].filter((id) => {
     const player = players.get(id);
-    return player && playerLocked(data, player, date);
+    return player && playerLocked(data, player, date, asOf);
   }));
-  const projections = new Map<number, number | null>();
+  const originalSlots = data.recommendations.lineup.filter((row) => row.date === date);
+  const projections = new Map(originalSlots.map((row) => [row.player_id, row.projected_fpts]));
   if (recommended) {
     for (const [slot, id] of assigned) if (!locked.has(id)) assigned.delete(slot);
     const effective = preview.transactions.filter((move) => move.date <= date);
     const swap = effective.length === 1 ? effective[0] : undefined;
     const pickup = swap && data.recommendations.pickups.find((option) =>
       option.add_player_id === swap.add && option.drop_player_id === swap.drop);
-    const recommendedSlots = pickup?.lineup_preview?.[date] ?? data.recommendations.lineup.filter((row) => row.date === date);
+    const recommendedSlots = pickup?.lineup_preview?.[date] ?? originalSlots;
     for (const row of recommendedSlots) {
       const id = row.player_id;
       if (id == null || !eligible.has(id) || locked.has(id) || assigned.has(row.slot)) continue;
@@ -97,8 +75,7 @@ export function previewDay(data: Data, players: Map<number, Player>, preview: Ro
     const id = assigned.get(slot);
     const player = id === undefined ? undefined : players.get(id);
     if (!player) return [];
-    const row = playerProjection(data, player, date, slot);
-    return [{ ...row, value: !row.started && projections.has(player.id) ? projections.get(player.id)! : row.value }];
+    return [playerPoints(data, player, date, asOf, slot, projections.get(player.id))];
   });
   const on = new Set(rows.map((row) => row.player.id));
   const off = roster.flatMap(({ player_id }) => {

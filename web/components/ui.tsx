@@ -151,19 +151,19 @@ export function usePageTitle(title: string) {
  * The chosen day, kept in ?day= so a day can be linked and survives a reload.
  * Without one it's `start` (today) when that's among the days, else the first day.
  */
-export function useDay(days: string[], start?: string): [string | undefined, (d: string) => void] {
-  const [picked, setPicked] = useState<string | null>(null);
+export function useDay(days: string[], start?: string, initialDay?: string): [string | undefined, (d: string) => void] {
+  const [picked, setPicked] = useState<string | null>(initialDay ?? null);
   useEffect(() => {
     // Read once on mount; the URL is the source of truth after a reload or a shared link.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setPicked(new URLSearchParams(window.location.search).get("day"));
-  }, []);
+    setPicked(new URLSearchParams(window.location.search).get("day") ?? initialDay ?? null);
+  }, [initialDay]);
   const home = start && days.includes(start) ? start : days[0];
-  const date = picked && days.includes(picked) ? picked : home;
+  const date = picked && days.includes(picked) ? picked : initialDay ?? home;
   const set = (d: string) => {
     setPicked(d);
     const url = new URL(window.location.href);
-    if (d === home) url.searchParams.delete("day");
+    if (d === home && !initialDay) url.searchParams.delete("day");
     else url.searchParams.set("day", d);
     window.history.replaceState(null, "", url);
   };

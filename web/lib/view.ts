@@ -14,13 +14,41 @@ export function gameOn(p: Player | undefined, date: string): WeekGame | undefine
   return p.game_dates_left?.includes(date) ? { date, opponent: null, home: false, start_utc: null, started: false } : undefined;
 }
 
+/** A player's slot can lock before ESPN has supplied a score. */
+export function playerLocked(data: Data, player: Player, date: string, asOf: number): boolean {
+  if (date !== data.meta.today) return false;
+  const game = gameOn(player, date);
+  return !!(player.game_today_locked || game?.started || (game?.start_utc && Date.parse(game.start_utc) <= asOf));
+}
+
+const AVAILABILITY: Record<string, number> = {
+  ACTIVE: 1, PROBABLE: 0.9, DAY_TO_DAY: 0.65, QUESTIONABLE: 0.55, DOUBTFUL: 0.2,
+  OUT: 0, INJURY_RESERVE: 0, SUSPENSION: 0,
+};
+
+export function playerPoints(
+  data: Data, player: Player, date: string, asOf: number, slot = "BE", projection?: number | null,
+): SideDay["rows"][number] {
+  const started = playerLocked(data, player, date, asOf);
+  const scored = started ? player.points_today ?? null : null;
+  const chance = AVAILABILITY[player.injury_status ?? "ACTIVE"] ?? 0.8;
+  const average = player.projection.engine_fpts_per_game;
+  const rest = player.back_to_back_dates?.includes(date) ? 0.95 : 1;
+  const eligible = (started || !!gameOn(player, date)) && slot !== "IR" && chance > 0;
+  const value = scored === null && eligible
+    ? projection ?? (average == null ? null : Math.round(average * chance * rest * 10) / 10)
+    : null;
+  return { player, slot, started, scored, value };
+}
+
 /** "TOR @ DET · 7:30 PM", or null when he has no game that day. */
-export function gameLine(p: Player, date: string): string | null {
+export function gameLine(p: Player, date: string, locked?: boolean): string | null {
   const g = gameOn(p, date);
   if (!g) return null;
-  if (!g.opponent) return `${p.nba_team} · ${g.started ? "Locked" : "Game scheduled"}`;
+  const started = locked ?? g.started;
+  if (!g.opponent) return `${p.nba_team} · ${started ? "Locked" : "Game scheduled"}`;
   const vs = `${p.nba_team} ${g.home ? "vs" : "@"} ${g.opponent}`;
-  return `${vs} · ${g.started ? "Locked" : tip(g.start_utc)}`;
+  return `${vs} · ${started ? "Locked" : tip(g.start_utc)}`;
 }
 
 /** "TOR @ DET · Final", for a game on a finished day. */
@@ -57,11 +85,11 @@ export type LineupRow = {
   slot: string;
   player: Player;
   game: WeekGame | undefined;
-  /** Projection for this day, or null when he can't play or his game is live. */
+  /** Projection for this day, including the last estimate while a score is pending. */
   value: number | null;
   /** Points already scored today (live or finished game), from ESPN. */
   scored: number | null;
-  state: "play" | "live" | "idle" | "out";
+  state: "play" | "live" | "pending" | "idle" | "out";
   /** A recommended starter who takes this player's slot. */
   replacedBy?: Move;
   /** For a bench player: the slot he's recommended into. */
@@ -73,27 +101,20 @@ export type DayView = {
   starters: LineupRow[];
   bench: LineupRow[];
   moves: Move[];
-  /** Projected total with the recommended lineup. */
-  withMoves: number;
-  /** Projected total for the lineup exactly as set on ESPN. */
-  asSet: number;
-  playing: number;
-  playingAsSet: number;
-  liveCount: number;
-  /** Points already scored by starters whose games have started. */
-  liveScored: number;
   watch: Player[];
 };
 
-export function dayView(data: Data, players: Map<number, Player>, date: string): DayView {
+export function dayView(data: Data, players: Map<number, Player>, date: string, asOf: number): DayView {
   const rec = recValues(data, date);
   const moves: Move[] = [];
   for (const c of changesFor(data, date)) {
     const start = players.get(c.player_id);
-    if (c.action !== "start" || !start) continue;
+    if (c.action !== "start" || !start || playerLocked(data, start, date, asOf)) continue;
+    const out = c.replaces != null ? players.get(c.replaces) : undefined;
+    if (out && playerLocked(data, out, date, asOf)) continue;
     const g = gameOn(start, date);
     moves.push({
-      start, slot: c.to_slot ?? "", out: c.replaces != null ? players.get(c.replaces) ?? null : null,
+      start, slot: c.to_slot ?? "", out: out ?? null,
       value: rec.get(start.id) ?? null, lock: g ? tip(g.start_utc) : null,
     });
   }
@@ -108,27 +129,19 @@ export function dayView(data: Data, players: Map<number, Player>, date: string):
     const p = players.get(r.player_id);
     if (!p) continue;
     const game = gameOn(p, date);
-    const out = unavailable(p);
-    const live = !!game?.started && rec.has(p.id) && rec.get(p.id) == null;
-    const value = out || !game ? null : live ? null : rec.has(p.id) ? rec.get(p.id)! : p.projection.engine_fpts_per_game ?? null;
+    const slot = slotType(r.lineup_slot ?? "BE");
+    const { value, scored, started } = playerPoints(data, p, date, asOf, slot, rec.get(p.id));
     rows.push({
-      slot: slotType(r.lineup_slot ?? "BE"), player: p, game, value, scored: live ? p.points_today ?? null : null,
-      state: out ? "out" : !game ? "idle" : live ? "live" : "play",
+      slot, player: p, game, value, scored,
+      state: scored !== null ? "live" : unavailable(p) ? "out" : started ? "pending" : !game ? "idle" : "play",
       replacedBy: byOut.get(p.id), startAt: startSlot.get(p.id),
     });
   }
   const starters = rows.filter((r) => !BENCH.has(r.slot));
   const bench = rows.filter((r) => BENCH.has(r.slot));
-  const sum = (xs: (number | null)[]) => xs.reduce<number>((s, v) => s + (v ?? 0), 0);
-  const withMoves = sum([...rec.values()]);
-  const asSet = sum(starters.map((r) => r.value));
   const benchPlays = bench.some((r) => r.state === "play" && !r.startAt);
   return {
-    date, starters, bench, moves, withMoves, asSet,
-    playing: rec.size,
-    playingAsSet: starters.filter((r) => r.state === "play" || r.state === "live").length,
-    liveCount: starters.filter((r) => r.state === "live").length,
-    liveScored: sum(starters.filter((r) => r.state === "live").map((r) => r.scored)),
+    date, starters, bench, moves,
     watch: benchPlays ? [] : starters.filter((r) => r.state === "play" && r.player.injury_status === "DAY_TO_DAY" && !r.replacedBy).map((r) => r.player),
   };
 }
@@ -207,36 +220,27 @@ export function pastDay(
 export type SideDay = { rows: { player: Player; slot: string; value: number | null; scored: number | null; started: boolean }[]; total: number; off: Player[]; available: boolean };
 
 /** One side's starters on a day: mine from the recommended lineup, theirs from the opponent's. */
-export function sideDay(data: Data, players: Map<number, Player>, date: string, mine: boolean, pickup?: Pickup, recommended = true): SideDay {
+export function sideDay(data: Data, players: Map<number, Player>, date: string, mine: boolean, asOf: number): SideDay {
   const team = mine ? data.my_team : data.opponent;
   const available = mine || !!data.recommendations.opponent_lineup;
-  const preview = mine ? pickup?.lineup_preview?.[date] : undefined;
-  const original = mine ? data.recommendations.lineup : data.recommendations.opponent_lineup ?? [];
-  const slots = preview ?? original.filter((s) => s.date === date);
-  const projected = slots
-    .filter((s) => s.player_id != null && players.has(s.player_id))
-    .map((s) => {
-      const player = players.get(s.player_id!)!;
-      const live = s.projected_fpts == null && !!gameOn(player, date)?.started;
-      return { player, slot: s.slot, value: s.projected_fpts ?? null, scored: live ? player.points_today ?? null : null, started: live };
-    })
-  const asSet = mine && !recommended && preview === undefined
-    ? dayView(data, players, date).starters
-      .filter((row) => row.state === "play" || row.state === "live")
-      .map(({ player, slot, value, scored, state }) => ({ player, slot, value, scored, started: state === "live" }))
-    : projected;
-  const rows = asSet.sort((a, b) => (b.value ?? -1) - (a.value ?? -1));
+  const slots = mine ? data.recommendations.lineup : data.recommendations.opponent_lineup ?? [];
+  const rows = slots.flatMap((slot) => {
+    const player = slot.player_id == null ? undefined : players.get(slot.player_id);
+    if (slot.date !== date || !player) return [];
+    return [playerPoints(data, player, date, asOf, slot.slot, slot.projected_fpts)];
+  }).sort((a, b) => (b.value ?? -1) - (a.value ?? -1));
   const on = new Set(rows.map((r) => r.player.id));
-  const roster = (team?.roster ?? []).map((r) => r.player_id);
-  const ids = preview && pickup ? [...roster.filter((id) => id !== pickup.drop_player_id), pickup.add_player_id] : roster;
-  const off = ids.map((id) => players.get(id)).filter((p): p is Player => !!p && !on.has(p.id));
-  return { rows, total: rows.reduce((s, r) => s + (r.value ?? 0) + (r.scored ?? 0), 0), off, available };
+  const off = (team?.roster ?? []).flatMap(({ player_id }) => {
+    const player = players.get(player_id);
+    return player && !on.has(player_id) ? [player] : [];
+  });
+  return { rows, total: rows.reduce((s, r) => s + (r.value ?? r.scored ?? 0), 0), off, available };
 }
 
 /** Weekly score through the selected date. Forecasts start from ESPN's current score. */
 export function scoreThroughDate(
   data: Data, players: Map<number, Player>, actuals: Record<string, Record<string, number>>,
-  lineups: DayLineups, date: string, preview?: ReadonlyMap<string, SideDay>,
+  lineups: DayLineups, date: string, asOf: number, preview?: ReadonlyMap<string, SideDay>,
 ) {
   const today = data.meta.today;
   const through = weekDays(data).filter((day) => day <= date);
@@ -245,7 +249,7 @@ export function scoreThroughDate(
     if (date === today) return current[i];
     if (date > today) {
       if (current[i] == null) return null;
-      const remaining = through.filter((day) => day >= today).map((day) => (i === 0 ? preview?.get(day) : undefined) ?? sideDay(data, players, day, i === 0));
+      const remaining = through.filter((day) => day >= today).map((day) => (i === 0 ? preview?.get(day) : undefined) ?? sideDay(data, players, day, i === 0, asOf));
       if (remaining.some((side) => !side.available)) return null;
       return current[i] + remaining.reduce((total, side) =>
         total + side.rows.reduce((sum, row) => sum + (row.value ?? 0), 0), 0);
@@ -363,23 +367,27 @@ function normalCdf(x: number): number {
 }
 
 /** Final projection for the selected lineup settings. Actual points are already in the ESPN score. */
-export function matchupProjection(data: Data, players: Map<number, Player>, preview: ReadonlyMap<string, SideDay>) {
+export function matchupProjection(data: Data, players: Map<number, Player>, preview: ReadonlyMap<string, SideDay>, asOf: number) {
   const projection = data.recommendations.matchup_projection ?? data.matchup.projected;
   if (projection?.mine == null || projection.opponent == null) return null;
-  const adjustment = weekDays(data).filter((date) => date >= data.meta.today).reduce((total, date) => {
-    const engine = sideDay(data, players, date, true);
-    const selected = preview.get(date) ?? engine;
-    const projectedPoints = (side: SideDay) => side.rows.reduce((sum, row) => sum + (row.value ?? 0), 0);
-    return total + projectedPoints(selected) - projectedPoints(engine);
-  }, 0);
-  const mine = projection.mine + adjustment;
+  const remaining = weekDays(data).filter((date) => date >= data.meta.today);
+  const adjustment = (mine: boolean) => {
+    const original = mine ? data.recommendations.lineup : data.recommendations.opponent_lineup ?? [];
+    return remaining.reduce((total, date) => {
+      const engine = original.filter((row) => row.date === date).reduce((sum, row) => sum + (row.projected_fpts ?? 0), 0);
+      const selected = (mine ? preview.get(date) : undefined) ?? sideDay(data, players, date, mine, asOf);
+      return total + selected.rows.reduce((sum, row) => sum + (row.value ?? 0), 0) - engine;
+    }, 0);
+  };
+  const mine = projection.mine + adjustment(true);
+  const opponent = projection.opponent + adjustment(false);
   const spread = (range?: [number, number] | null) => range ? (range[1] - range[0]) / (2 * RANGE_Z) : 0;
   const sd = Math.hypot(spread(projection.mine_range), spread(projection.opponent_range));
-  const margin = mine - projection.opponent;
-  const win = Math.abs(adjustment) < 0.001
+  const margin = mine - opponent;
+  const win = Math.abs(margin - (projection.mine - projection.opponent)) < 0.001
     ? projection.win_probability ?? null
     : sd > 0 ? normalCdf(margin / sd) : null;
-  return { mine, opponent: projection.opponent, win };
+  return { mine, opponent, win };
 }
 
 /** "up 5", "down 30", "tied", from a margin in points. */

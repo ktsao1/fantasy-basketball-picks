@@ -4,7 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useData } from "@/lib/data";
-import { ago, clock } from "@/lib/format";
+import { ago, clock, dayShort } from "@/lib/format";
 import { GameIcon } from "./ui";
 
 const NAV = [
@@ -32,16 +32,22 @@ export function Shell({ children }: { children: React.ReactNode }) {
               </Link>
             ))}
           </nav>
-          {ctx.status === "ready" && <TopRight />}
+          {ctx.status === "ready" && !ctx.example && <TopRight />}
         </div>
       </header>
-      {ctx.status === "ready" && <Notices />}
+      {ctx.status === "ready" && (ctx.example && ctx.data ? (
+        <div className="example-notice">
+          <p className="notice"><strong>Video example</strong> <span>{dayShort(ctx.data.meta.today)}, {ctx.data.meta.today.slice(0, 4)} · {clock(ctx.data.meta.updated_at)} ET</span>
+            <Link href="/">Open live dashboard <span aria-hidden>→</span></Link>
+          </p>
+        </div>
+      ) : <Notices />)}
       <main className="page" id="main" tabIndex={-1}>
         {ctx.status === "loading" && <p className="loading" role="status">Loading league data…</p>}
         {ctx.status === "error" && (
           <div className="error" role="alert">
             <p><b>Couldn&rsquo;t load the league data.</b></p>
-            <p>Check your connection, then try again. If it keeps failing, the latest pull may be missing from the site.</p>
+            <p>Check your connection, then try again. If it keeps failing, the {ctx.example ? "video snapshot" : "latest pull"} may be missing from the site.</p>
             <button className="btn" onClick={ctx.reload}>Try again</button>
           </div>
         )}

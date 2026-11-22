@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useData } from "@/lib/data";
-import { lastName, signed, weekday } from "@/lib/format";
+import { lastName, monthDay, signed, weekday } from "@/lib/format";
 import { addStart, countableGames, dropCaution, type DayView } from "@/lib/view";
 import { Card, Photo, Tag } from "./ui";
 
@@ -85,36 +85,20 @@ export function FreeAgency() {
   const hot = recent != null && season != null && (add?.stats.last_15?.gp ?? 0) >= 3 && recent > season;
 
   return (
-    <Card title="Free agency" className="today-free-agency" aside={add && (
-      <Link className="today-pickup-details" href={`/free-agents/${add.id}`}>View details <span aria-hidden>→</span></Link>
-    )}>
+    <Card title="Free agency" className="today-free-agency">
       {!top || !add ? (
         <p className="muted">No free agent beats anyone on your roster this week.</p>
       ) : (
         <div className="today-pickup-content">
-          <div className="swap">
-            <div className="swap-player">
-              <Photo p={add} w={112} h={84} />
-              <div>
-                <small>Add</small>
-                <b>{add.name}</b>
-                <span>{add.nba_team} · {add.primary_position}</span>
-              </div>
-            </div>
-            {drop && (
-              <>
-                <span className="today-pickup-arrow" aria-hidden>→</span>
-                <div className="swap-player out">
-                  <Photo p={drop} w={112} h={84} dim />
-                  <div>
-                    <small>Drop</small>
-                    <b>{drop.name}</b>
-                    <span>{drop.nba_team} · {drop.primary_position}</span>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
+          <Link className="today-pickup-lead" href={`/free-agents/${add.id}`}>
+            <span><b>{add.free_agent_status === "WAIVERS" ? "Claim" : "Add"} {add.name} <span className="today-pickup-arrow" aria-hidden>→</span></b>
+              <small>Counts from {monthDay(effective)}{drop && ` · Drop ${drop.name}`}</small>
+            </span>
+            <span className="today-pickup-gain">
+              <b className="num">{signed(top.gain_this_week)}</b>
+              <small>proj. pts this week</small>
+            </span>
+          </Link>
           <ul className="today-pickup-factors" aria-label="Pickup factors">
             <li><Image src="/img/pickup/calendar.svg" width={16} height={16} alt="" unoptimized />
               {addGames} {addGames === 1 ? "game" : "games"}{drop && ` vs ${dropGames}`}
@@ -126,8 +110,8 @@ export function FreeAgency() {
           </ul>
           {caution && <p className="caution">{caution}</p>}
           {rest.length > 0 && (
-            <div className="today-pickup-alternatives">
-              <h3 className="section-label">Other options</h3>
+            <details className="today-pickup-alternatives">
+              <summary className="section-label">Other options</summary>
               {rest.map((option) => {
                 const player = players.get(option.add_player_id);
                 const drop = option.drop_player_id == null ? undefined : players.get(option.drop_player_id);
@@ -142,7 +126,7 @@ export function FreeAgency() {
                   </Link>
                 );
               })}
-            </div>
+            </details>
           )}
         </div>
       )}
